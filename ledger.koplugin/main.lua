@@ -29,6 +29,7 @@ local Bg = require("ledger_bg")
 local Book = require("ledger_book")
 local Data = require("ledger_data")
 local Home = require("ledger_home")
+local Library = require("ledger_library")
 local Net = require("ledger_net")
 local UI = require("ledger_ui")
 
@@ -104,10 +105,11 @@ function Ledger:redraw()
 end
 
 function Ledger:closeAll()
-    -- (not ipairs over {book_page, home}: it stops at the first nil)
+    -- (not ipairs over the widgets: it stops at the first nil)
     if self.book_page and UIManager:isWidgetShown(self.book_page) then UIManager:close(self.book_page) end
+    if self.library and UIManager:isWidgetShown(self.library) then UIManager:close(self.library) end
     if self.home and UIManager:isWidgetShown(self.home) then UIManager:close(self.home) end
-    self.book_page, self.home = nil, nil
+    self.book_page, self.library, self.home = nil, nil, nil
     UI.freeSprites()
 end
 
@@ -126,15 +128,13 @@ function Ledger:showBook(rec)
 end
 
 -- KOReader's cover cache extracts covers in the background; ask for the
--- ones we're about to show and redraw once they're in.
-function Ledger:fetchCovers(data)
+-- ones we're about to show and call back once they're in.
+function Ledger:fetchCoversFor(recs, on_done)
     local ok, BIM = pcall(require, "bookinfomanager")
     if not ok or not BIM then return end
     local files = {}
-    local list = { data.lead }
-    for _, r in ipairs(data.just_in or {}) do list[#list + 1] = r end
     local W = Device.screen:getWidth()
-    for _, rec in pairs(list) do
+    for _, rec in pairs(recs) do
         if rec and rec.file then
             local iok, info = pcall(BIM.getBookInfo, BIM, rec.file, false)
             if not (iok and info and info.cover_fetched) then
@@ -144,12 +144,35 @@ function Ledger:fetchCovers(data)
     end
     if #files == 0 then return end
     pcall(BIM.extractInBackground, BIM, files)
-    UIManager:scheduleIn(6, function()
+    -- one extra second per book, capped: the extractor works through them in order
+    UIManager:scheduleIn(math.min(20, 4 + #files), function() if on_done then on_done() end end)
+end
+
+function Ledger:fetchCovers(data)
+    local list = { data.lead }
+    for _, r in ipairs(data.just_in or {}) do list[#list + 1] = r end
+    self:fetchCoversFor(list, function()
         if self.book_page and UIManager:isWidgetShown(self.book_page) then
             self.book_page:update(self.book_page.hc)
         end
         self:redraw()
     end)
+end
+
+function Ledger:showLibrary()
+    local bb = self:bookbridge()
+    local dirs = { G_reader_settings:readSetting("home_dir") }
+    if bb and bb.download_dir and bb.download_dir ~= dirs[1] then dirs[#dirs + 1] = bb.download_dir end
+    local books = Data.library(dirs, Data.readestPositions(self.ui), Data.hardcoverMatches())
+    if self.library and UIManager:isWidgetShown(self.library) then UIManager:close(self.library) end
+    self.library = Library:new{ plugin = self, books = books }
+    UIManager:show(self.library, "flashui")
+    self:fetchCoversFor(self.library:visible(), function() self.library:refreshCovers() end)
+end
+
+-- Out to KOReader's own file browser (folders, file operations).
+function Ledger:openFiles()
+    self:closeAll()
 end
 
 -- ---------------------------------------------------------------- remote data
@@ -242,8 +265,7 @@ function Ledger:onReaderReady()
 end
 
 function Ledger:openLibrary()
-    logger.info("ledger: library (closing the Ledger)", self.ui.document and "over a book" or "in the file browser")
-    self:closeAll()
+    self:showLibrary()
 end
 
 function Ledger:search()
@@ -317,6 +339,7 @@ function Ledger:onCloseWidget()
     -- the plugin instance belongs to a FileManager or ReaderUI that is going away
     if self.home and UIManager:isWidgetShown(self.home) then UIManager:close(self.home) end
     if self.book_page and UIManager:isWidgetShown(self.book_page) then UIManager:close(self.book_page) end
+    if self.library and UIManager:isWidgetShown(self.library) then UIManager:close(self.library) end
 end
 
 return Ledger

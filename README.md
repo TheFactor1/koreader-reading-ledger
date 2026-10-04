@@ -14,9 +14,13 @@ what's trending on Open Library.
 
 ## Status
 
-First working version (2026-10-04): front page, book page, the race, Catch up
-with the dog, Open Library trending, Hardcover shelves and goal. Opened from
-the main menu as **Reading Ledger** (or a gesture: "Reading Ledger").
+Working (2026-10-04): front page, book page, the race, Catch up with the dog,
+Open Library trending, Hardcover shelves and goal, and the **library** -- every
+book on the device as a paged grid of covers, each wearing a pet badge (the cat
+and your % while reading, the dog and NEW for new arrivals, a fish when
+finished), with All / Reading / New / Finished filters, sort by recent, title,
+author or series, and Files for KOReader's own file browser. Opened from the
+main menu as **Reading Ledger** (or a gesture: "Reading Ledger").
 
 Still to come: the onboarding screen, replacing Bookshelf as the home screen,
 the Race results screen, and a run with the real Readest plugin signed in.
@@ -42,7 +46,8 @@ library, reading statistics and seeded Hardcover numbers; taps injected as real
 KOReader gestures. Covered: front page with and without a Hardcover key (Open
 Library fetched live), book page for a book in progress and a new arrival,
 Catch up with the dog (opens the book and asks Readest to jump), the Ledger
-over an open book, Library and Menu.
+over an open book, Library and Menu; the library's filters, sort, paging, opening a book from the
+grid and back, and Files, with 20 books (some in a subfolder).
 
 ## Credits
 

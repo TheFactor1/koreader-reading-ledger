@@ -359,8 +359,11 @@ function UI.cover(rec, w, h)
     if bim_ok and BIM and rec.file then
         local ok, info = pcall(BIM.getBookInfo, BIM, rec.file, true)
         if ok and info and info.cover_bb and info.has_cover then
+            -- fill the frame (book covers are all roughly 2:3, so a stretch
+            -- of up to 10% is invisible); letterbox anything stranger
             local img = ImageWidget:new{ image = info.cover_bb, image_disposable = true,
-                width = w, height = h, scale_factor = 0 }
+                width = w - 2 * Screen:scaleBySize(2), height = h - 2 * Screen:scaleBySize(2),
+                stretch_limit_percentage = 10 }
             return FrameContainer:new{ bordersize = Screen:scaleBySize(2), padding = 0, margin = 0, img }, true
         end
     end

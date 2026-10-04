@@ -130,6 +130,80 @@ function Data.justIn(dirs, max_age_days, limit)
     return found
 end
 
+-- Every book on the device under the given folders, for the library.
+-- Title/author come from KOReader's cover-browser cache when it has them
+-- (cheap), the sidecar for books you've opened (status, progress), and the
+-- file name ("Author - Title") otherwise. Bounded like justIn().
+function Data.library(dirs, readest, matches)
+    local bim_ok, BIM = pcall(require, "bookinfomanager")
+    local last_open = {}
+    local ok, ReadHistory = pcall(require, "readhistory")
+    if ok and ReadHistory then
+        for _, item in ipairs(ReadHistory.hist or {}) do
+            if item.file then last_open[item.file] = item.time end
+        end
+    end
+    local out, seen, scanned = {}, {}, 0
+    local function add(path, attr)
+        local rec
+        if DocSettings:hasSidecarFile(path) then
+            rec = Data.localRecord(path, last_open[path])
+        end
+        if not rec then
+            rec = { file = path, title = basenameTitle(path), opened = false }
+            local author, title = rec.title:match("^(.-)%s+%-%s+(.+)$")
+            if author and title then rec.author, rec.title = author, title end
+        end
+        if bim_ok and BIM then
+            local iok, info = pcall(BIM.getBookInfo, BIM, path, false)
+            if iok and info then
+                if not rec.opened and type(info.title) == "string" and info.title ~= "" then rec.title = info.title end
+                if not rec.author and type(info.authors) == "string" and info.authors ~= "" then
+                    rec.author = info.authors:gsub("\n.*", "")
+                end
+                if not rec.series and type(info.series) == "string" and info.series ~= "" then
+                    rec.series, rec.series_index = info.series, tonumber(info.series_index)
+                end
+            end
+        end
+        rec.added = attr.modification
+        rec.last_open = last_open[path]
+        Data.enrich(rec, readest, matches)
+        out[#out + 1] = rec
+    end
+    local function walk(dir, depth)
+        if depth > 4 or scanned > 6000 then return end
+        local iok, iter, dir_obj = pcall(lfs.dir, dir)
+        if not iok then return end
+        for name in iter, dir_obj do
+            if name ~= "." and name ~= ".." and name:sub(1, 1) ~= "." and not name:match("%.sdr$") then
+                scanned = scanned + 1
+                local path = dir .. "/" .. name
+                local attr = lfs.attributes(path)
+                if attr and attr.mode == "directory" then
+                    walk(path, depth + 1)
+                elseif attr and attr.mode == "file" and isBook(name) and not seen[path]
+                        and not name:match("%.downloading$") then
+                    seen[path] = true
+                    add(path, attr)
+                end
+            end
+        end
+    end
+    for _, d in ipairs(dirs) do
+        if d and lfs.attributes(d, "mode") == "directory" then walk(d, 1) end
+    end
+    return out
+end
+
+-- The library's status for a record: "reading" | "new" | "finished" | "unread"
+function Data.status(rec)
+    if Data.isFinished(rec) then return "finished" end
+    if rec.opened and (rec.pct or 0) > 0 then return "reading" end
+    if not rec.opened and rec.added and rec.added >= os.time() - 21 * 86400 then return "new" end
+    return "unread"
+end
+
 -- Readest's synced position for every book it knows: hash -> {pct, updated_at, status}.
 function Data.readestPositions(ui)
     local settings = G_reader_settings:readSetting("readest_sync")
