@@ -1,0 +1,10 @@
+Pixel sprites used by the Reading Ledger. All are public domain (CC0 1.0,
+https://creativecommons.org/publicdomain/zero/1.0/); credit is given anyway.
+
+cat_*.png  Cat sprites by Shepardskin
+           https://opengameart.org/content/cat-sprites
+dog_*.png  Dog Spritesheets (white) by Jason of GDN
+           https://opengameart.org/content/dog-spritesheets
+fish.png   drawn for this plugin
+
+Converted to 16 grey levels for e-ink; poses cut from the original sheets.
