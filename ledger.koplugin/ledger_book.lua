@@ -60,9 +60,9 @@ function Book:dogLine(rec)
     local diff = r.pct - (rec.pct or 0)
     if diff >= 0.01 then
         if rec.pages and rec.pages > 0 then
-            return string.format("I'm %d pages ahead on your other device. Catch up?", math.floor(diff * rec.pages + 0.5))
+            return string.format("Readest has you %d pages further on.", math.floor(diff * rec.pages + 0.5))
         end
-        return string.format("I'm %d%% ahead on your other device. Catch up?", math.floor(diff * 100 + 0.5))
+        return string.format("Readest has you %d%% further on.", math.floor(diff * 100 + 0.5))
     elseif diff <= -0.01 then
         return "You're ahead of me. I'll catch up next time Readest syncs."
     end
@@ -125,8 +125,9 @@ function Book:build()
         buttons[#buttons + 1] = UI.button(label, cb, outlined)
     end
     if Data.readestAhead(rec) then
-        btn("Catch up with the dog", function() plugin:continueFromReadest(rec) end)
-        btn("Read here", function() plugin:openBook(rec) end, true)
+        local ahead, here = Data.jumpLabels(rec)
+        btn(ahead, function() plugin:continueFromReadest(rec) end)
+        btn(here, function() plugin:openBook(rec) end, true)
     else
         btn(rec.opened and "Keep reading" or "Start reading", function() plugin:openBook(rec) end)
     end

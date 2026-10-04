@@ -206,11 +206,15 @@ function Reading:build(squeeze)
         if #facts > 0 then info[#info + 1] = UI.para(table.concat(facts, " · "), "body", 11, info_w, UI.INK2) end
         info[#info + 1] = UI.vspace(s(12))
         if Data.readestAhead(rec) then
-            -- both buttons as wide as the wider one
-            local bw = math.min(info_w, UI.buttonWidth("Catch up with the dog"))
-            info[#info + 1] = UI.button("Catch up with the dog", function() plugin:continueFromReadest(rec) end, false, nil, bw)
+            -- two places to open it: where Readest got to, or where this
+            -- device is; both buttons as wide as the wider one
+            local ahead, here, note = Data.jumpLabels(rec)
+            info[#info + 1] = UI.para(note, "body", 11, info_w, UI.BLACK)
             info[#info + 1] = UI.vspace(s(6))
-            info[#info + 1] = UI.button("Read here", function() plugin:openBook(rec) end, true, nil, bw)
+            local bw = math.min(info_w, math.max(UI.buttonWidth(ahead), UI.buttonWidth(here)))
+            info[#info + 1] = UI.button(ahead, function() plugin:continueFromReadest(rec) end, false, nil, bw)
+            info[#info + 1] = UI.vspace(s(6))
+            info[#info + 1] = UI.button(here, function() plugin:openBook(rec) end, true, nil, bw)
         else
             info[#info + 1] = UI.button("Keep reading", function() plugin:openBook(rec) end)
         end

@@ -392,6 +392,23 @@ function Data.readingStats(hash)
     return out
 end
 
+-- When Readest is further on: what the two buttons say, and a line saying
+-- why there are two. Pages when the book's length is known, else percent.
+--   "Continue from p. 203" / "Stay on p. 181" / "Readest is further on (2 h ago)."
+function Data.jumpLabels(rec)
+    local r = rec.readest or {}
+    local pages = rec.pages and rec.pages > 0 and rec.pages
+    local function at(pct, verb_page, verb_pct)
+        if pages then return string.format("%s p. %d", verb_page, math.max(1, math.floor(pct * pages + 0.5))) end
+        return string.format("%s %d%%", verb_pct, math.floor(pct * 100 + 0.5))
+    end
+    local ahead = at(r.pct or 0, "Continue from", "Continue from")
+    local here = at(rec.pct or 0, "Stay on", "Stay at")
+    local ago = Data.ago(r.updated_at)
+    local note = ago and string.format("Readest is further on (%s).", ago) or "Readest is further on."
+    return ahead, here, note
+end
+
 -- "about 6 h left" from a pace and the pages still to go.
 function Data.timeLeft(pace, pages, pct)
     if not (pace and pages and pages > 0) then return nil end

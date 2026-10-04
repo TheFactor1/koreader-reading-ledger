@@ -3,8 +3,9 @@
 A front page for KOReader with pixel pets. Every book is a race between
 **Biscuit the cat** (your place on this device) and **Pip the dog** (your place
 in Readest, on your phone or tablet); the chequered flag is the last page.
-Whoever is ahead shows you where to pick up: **Catch up with the dog** opens
-the book and lets Readest move it forward to where you got to.
+When Readest is further on, two buttons say exactly where each opens:
+**Continue from p. 203** (where you got to in Readest) or **Stay on p. 181**
+(where this device is).
 
 The front page also shows what you read today, your other books on the go,
 what Pip fetched (new books nobody has opened yet), what Biscuit is waiting for
@@ -53,7 +54,7 @@ On the desktop KOReader v2026.07.1 in a throwaway `KO_HOME` (Paperwhite-sized
 library, reading statistics and seeded Hardcover numbers; taps injected as real
 KOReader gestures. Covered: front page with and without a Hardcover key (Open
 Library fetched live), book page for a book in progress and a new arrival,
-Catch up with the dog (opens the book and asks Readest to jump), the Ledger
+Continue from Readest's page (opens the book and asks Readest to jump), the Ledger
 over an open book, Library and Menu; the library's filters, sort, paging, opening a book from the
 grid and back, and Files, with 20 books (some in a subfolder).
 

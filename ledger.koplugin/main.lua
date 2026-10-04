@@ -36,7 +36,7 @@ local UI = require("ledger_ui")
 
 local REFRESH_EVERY = 30 * 60   -- remote data older than this is refreshed on show
 
--- Set by "Catch up with the dog": the file whose Readest position to jump to
+-- Set by "Continue from p. N" (Readest's place): the file whose Readest position to jump to
 -- once it's open (the reader's own plugin instance does the jump).
 local pending_readest_jump = nil
 
