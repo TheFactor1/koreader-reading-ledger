@@ -8,10 +8,11 @@ The Currently reading page: the Ledger's main page, all about the book you're on
            442 pages · about 4 h left
            [CATCH UP WITH THE DOG]
   Description, a few lines (tap for all of it)
-  [ the chase: cat (this device) and dog (Readest) racing to the flag ]
-  Cat: here 41% · p. 181                     Dog: Readest 46% · 2 h ago
+  [ the race: you against your rival, to the flag ]
+  Biscuit (you) · p. 203                                 Pip · p. 230
+  Today 23 pages. 8 more to out-read Pip.
   TODAY 23 | THIS WEEK 140 | STREAK 4 DAYS
-  Pip fetched 2 new · waiting for 1 ›
+  2 new books · waiting for 1 ›
   fish goal
   [LIBRARY] [CURRENTLY READING] [SETTINGS]
 
@@ -29,6 +30,7 @@ local VerticalGroup = require("ui/widget/verticalgroup")
 local UIManager = require("ui/uimanager")
 local Chase = require("ledger_chase")
 local Data = require("ledger_data")
+local Race = require("ledger_race")
 local UI = require("ledger_ui")
 
 local Screen = Device.screen
@@ -91,48 +93,6 @@ end
 function Reading:repaint()
     UIManager:setDirty(self, "ui")
     if self.chase then self.chase:runIn() end
-end
-
--- What the pets say when you tap them.
-function Reading:petLines(rec)
-    local p = self.plugin
-    local cat, dog = p:petName("cat"), p:petName("dog")
-    local pct = rec.pct or 0
-    local here = math.floor(pct * 100 + 0.5)
-    local cat_says
-    if rec.pages and rec.pages > 0 then
-        cat_says = string.format("%s: I'm on page %d of %d here (%d%%).", cat,
-            math.max(1, math.floor(pct * rec.pages + 0.5)), rec.pages, here)
-    else
-        cat_says = string.format("%s: I'm at %d%% here.", cat, here)
-    end
-    local dog_says
-    local r = rec.readest
-    if r and r.pct then
-        local there = math.floor(r.pct * 100 + 0.5)
-        local ago = Data.ago(r.updated_at) or "a while ago"
-        local diff = r.pct - pct
-        if diff >= 0.01 and rec.pages and rec.pages > 0 then
-            dog_says = string.format("%s: Readest has you at %d%%, %s. I'm %d pages ahead!", dog, there, ago,
-                math.floor(diff * rec.pages + 0.5))
-        elseif diff <= -0.01 then
-            dog_says = string.format("%s: Readest has you at %d%%, %s. The cat's ahead.", dog, there, ago)
-        else
-            dog_says = string.format("%s: Readest has you at %d%% too. Neck and neck.", dog, there)
-        end
-    elseif self.data and self.data.readest_signed_in then
-        dog_says = string.format("%s: I'm not racing this one. Put it in your Readest library and I'll join in.", dog)
-    else
-        dog_says = string.format("%s: No Readest, no race for me. I'll just sit here.", dog)
-    end
-    local fish_says
-    local hc = self.cache and self.cache.hardcover
-    if hc and hc.goal and hc.goal.goal then
-        fish_says = string.format("Finish this one and it's fish %d of %d this year.", (hc.goal.progress or 0) + 1, hc.goal.goal)
-    else
-        fish_says = "A fish for every book you finish."
-    end
-    return cat_says, dog_says, fish_says
 end
 
 local function statBlock(label, value, w)
@@ -238,24 +198,23 @@ function Reading:build(squeeze)
             gap(s(12))
         end
 
-        -- the chase
-        local cat_says, dog_says, fish_says = self:petLines(rec)
+        -- the race
+        local race = Race.state(rec, stats, plugin.settings, plugin:runner(), plugin:rival())
+        local lines = Race.lines(plugin, rec, race, self.cache)
         local chase = Chase:new{
             width = cw, height = math.floor(H * (0.19 - 0.02 * squeeze)),
-            cat_pct = rec.pct or 0, dog_pct = rec.readest and rec.readest.pct or nil,
-            cat_says = cat_says, dog_says = dog_says, fish_says = fish_says,
+            you = plugin:runner(), rival = plugin:rival(),
+            you_pct = race.you_pct, rival_pct = race.rival_pct, napping = race.napping,
+            you_says = lines.you_says, rival_says = lines.rival_says, fish_says = lines.fish_says,
             animate = plugin:animationsOn(), t = 1,
         }
         chase.show_parent = self
         self.chase = chase
         add(chase)
         add(UI.vspace(s(4)))
-        local cat_label = string.format("%s: here %d%%", plugin:petName("cat"), math.floor((rec.pct or 0) * 100 + 0.5))
-        local dog_label = rec.readest and rec.readest.pct
-            and string.format("%s: Readest %d%% · %s", plugin:petName("dog"), math.floor(rec.readest.pct * 100 + 0.5),
-                Data.ago(rec.readest.updated_at) or "synced")
-            or string.format("%s: not racing", plugin:petName("dog"))
-        add(UI.spread(cw, UI.text(cat_label, "body", 10, UI.INK2), UI.text(dog_label, "body", 10, UI.INK2)))
+        add(UI.spread(cw, UI.text(lines.you_label, "body", 10, UI.INK2), UI.text(lines.rival_label, "body", 10, UI.INK2)))
+        add(UI.vspace(s(6)))
+        add(UI.text(lines.today, "body", 11, UI.BLACK, cw))
         gap(s(14))
     end
 
@@ -276,7 +235,7 @@ function Reading:build(squeeze)
     -- arrivals and waiting, one line into the library
     local n_new = #(d.just_in or {})
     local n_wait = #(c.requests or {})
-    local line = string.format("%s fetched %d new · waiting for %d  ›", plugin:petName("dog"), n_new, n_wait)
+    local line = string.format("%d new %s · waiting for %d  ›", n_new, n_new == 1 and "book" or "books", n_wait)
     add(UI.tappable(UI.text(line, "body", 12, UI.BLACK, cw), function() plugin:showTab("library", { filter = "new" }) end))
 
     -- footer: goal, then the tabs

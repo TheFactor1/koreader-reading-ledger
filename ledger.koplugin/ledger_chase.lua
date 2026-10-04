@@ -2,10 +2,12 @@
 The chase: the Currently reading page's race scene.
 
 A field with distance marks and a chequered flag at the finish, where a fish
-waits as the prize. The cat runs for this device, the dog for Readest. When
-the page opens they sprint in from the start line to where you are, cycling
-through their running frames (only this region redraws, in e-ink's fast
-mode, then one clean refresh). Tap a pet and it tells you where it is.
+waits as the prize. Your runner is on the ground, your rival on the dashed
+lane above (see ledger_race.lua). When the page opens they sprint in from
+the start line to where they are, cycling through their running frames
+(only this region redraws, in e-ink's fast mode, then one clean refresh).
+A napping rabbit lies still with a Z over it. Tap a runner and it tells you
+where it is.
 --]]
 
 local Device = require("device")
@@ -14,6 +16,7 @@ local GestureRange = require("ui/gesturerange")
 local InputContainer = require("ui/widget/container/inputcontainer")
 local UIManager = require("ui/uimanager")
 local FrameContainer = require("ui/widget/container/framecontainer")
+local Race = require("ledger_race")
 local UI = require("ledger_ui")
 
 local Screen = Device.screen
@@ -21,15 +24,18 @@ local Screen = Device.screen
 local Chase = InputContainer:extend{
     width = nil,
     height = nil,
-    cat_pct = 0,
-    dog_pct = nil,      -- nil: the dog isn't racing (sits at the start)
-    cat_says = nil,     -- what each pet says when tapped
-    dog_says = nil,
+    you = "cat",        -- animal ids (ledger_race.lua)
+    rival = "dog",
+    you_pct = 0,
+    rival_pct = 0,
+    napping = false,    -- the rabbit, on its day off
+    you_says = nil,     -- what each says when tapped
+    rival_says = nil,
     fish_says = nil,
     animate = true,
     t = 1,              -- animation progress 0..1
     frame = 0,          -- running-pose frame
-    say = nil,          -- { who = "cat"|"dog"|"fish", text = ... }
+    say = nil,          -- { who = "you"|"rival"|"fish", text = ... }
 }
 
 function Chase:init()
@@ -87,14 +93,15 @@ function Chase:paintTo(bb, x, y)
     fish:paintTo(bb, fish_x, ground_y - fs.h)
     self.rects.fish = Geom:new{ x = fish_x, y = ground_y - fs.h, w = fs.w, h = fs.h }
 
-    -- the runners: the dog a lane behind (higher up), the cat in front
+    -- the runners: the rival a lane behind (higher up), you in front
     local t = ease(self.t or 1)
     local running = (self.t or 1) < 1
     -- one whole-number scale per animal, so frames of different heights
     -- don't make the pet pulse in size while it runs
+    local you_a, rival_a = Race.animal(self.you), Race.animal(self.rival)
     self.k = self.k or {
-        cat = UI.spriteScaleH("cat_run2", self.pet_h),
-        dog = UI.spriteScaleH("dog_run1", math.floor(self.pet_h * 0.85)),
+        you = UI.spriteScaleH(you_a.still, math.floor(self.pet_h * you_a.scale)),
+        rival = UI.spriteScaleH(rival_a.still, math.floor(self.pet_h * rival_a.scale * 0.9)),
     }
     local function place(name, pct, lane_y, key)
         local img = UI.sprite(name, self.k[key])
@@ -105,22 +112,27 @@ function Chase:paintTo(bb, x, y)
         self.rects[key] = Geom:new{ x = px, y = lane_y - is.h, w = is.w, h = is.h }
         return px, is
     end
-    -- two lanes: the dog runs on a dashed track in the upper half, the cat
+    -- two lanes: the rival runs on a dashed track in the upper half, you
     -- on the ground; neither ever covers the other
-    local dog_lane = y + math.floor((ground_y - y) * 0.5)
-    local cat_lane = ground_y
+    local rival_lane = y + math.floor((ground_y - y) * 0.5)
+    local you_lane = ground_y
     local dash = s(6)
     for dx = 0, track_w, dash * 2 do
-        bb:paintRect(x + dx, dog_lane + s(1), math.min(dash, track_w - dx), math.max(1, s(2)), UI.INK3)
+        bb:paintRect(x + dx, rival_lane + s(1), math.min(dash, track_w - dx), math.max(1, s(2)), UI.INK3)
     end
-    if self.dog_pct then
-        local dog_name = running and ("dog_run" .. (self.frame % 4)) or "dog_run1"
-        place(dog_name, self.dog_pct, dog_lane, "dog")
-    else
-        place("dog_sit", 0, dog_lane, "dog")
+    local function pose(a)
+        if running then return a.run[self.frame % #a.run + 1] end
+        return a.still
     end
-    local cat_name = running and ("cat_run" .. (self.frame % 6)) or "cat_run2"
-    place(cat_name, self.cat_pct or 0, cat_lane, "cat")
+    local napping = self.napping and rival_a.nap
+    place(napping and not running and rival_a.nap or pose(rival_a), self.rival_pct or 0, rival_lane, "rival")
+    if napping and not running then
+        local z = UI.text("z Z", "pix", 9)
+        local r = self.rects.rival
+        z:paintTo(bb, r.x + r.w - math.floor(z:getSize().w / 2), r.y - z:getSize().h)
+        z:free()
+    end
+    place(pose(you_a), self.you_pct or 0, you_lane, "you")
 
     -- speech bubble for whoever was tapped
     if self.say and self.say.text and self.rects[self.say.who] then
@@ -145,7 +157,7 @@ end
 function Chase:onTap(_, ges)
     local p = ges and ges.pos
     if not p then return true end
-    for _, who in ipairs({ "cat", "dog", "fish" }) do
+    for _, who in ipairs({ "you", "rival", "fish" }) do
         local r = self.rects[who]
         if r and p.x >= r.x - 10 and p.x <= r.x + r.w + 10 and p.y >= r.y - 10 and p.y <= r.y + r.h + 10 then
             local text = self[who .. "_says"]

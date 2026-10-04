@@ -1,7 +1,7 @@
 --[[
 The book page: one place for what every source knows about a book.
-Cover and details, the cat-and-dog race with the gap in pages, the actions,
-and Pip the dog in his room with something to say about it.
+Cover and details, the race against your rival, the actions, and the
+rival in its room with something to say about it.
 --]]
 
 local Device = require("device")
@@ -11,7 +11,9 @@ local HorizontalGroup = require("ui/widget/horizontalgroup")
 local InputContainer = require("ui/widget/container/inputcontainer")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local UIManager = require("ui/uimanager")
+local Chase = require("ledger_chase")
 local Data = require("ledger_data")
+local Race = require("ledger_race")
 local UI = require("ledger_ui")
 
 local Screen = Device.screen
@@ -45,28 +47,15 @@ function Book:update(hc)
     UIManager:setDirty(self, "ui")
 end
 
--- What Pip has to say about this book.
-function Book:dogLine(rec)
+-- What the rival has to say about this book.
+function Book:rivalLine(rec, lines)
     if not rec.opened then
         return "New arrival! Open it and the race starts."
     end
     if Data.isFinished(rec) then
         return "You finished this one. Good race."
     end
-    local r = rec.readest
-    if not (r and r.pct) then
-        return "I'm not racing this one. Put it in your Readest library and I'll join in."
-    end
-    local diff = r.pct - (rec.pct or 0)
-    if diff >= 0.01 then
-        if rec.pages and rec.pages > 0 then
-            return string.format("Readest has you %d pages further on.", math.floor(diff * rec.pages + 0.5))
-        end
-        return string.format("Readest has you %d%% further on.", math.floor(diff * 100 + 0.5))
-    elseif diff <= -0.01 then
-        return "You're ahead of me. I'll catch up next time Readest syncs."
-    end
-    return "We're neck and neck."
+    return (lines.rival_says:gsub("^[^:]*: ", ""))
 end
 
 function Book:build()
@@ -109,13 +98,21 @@ function Book:build()
     add(HorizontalGroup:new{ align = "top", cover, UI.hspace(s(14)), info })
     add(UI.vspace(s(14)))
 
-    -- the race
-    local dog_pct = rec.readest and rec.readest.pct or nil
-    add(UI.race(cw, rec.pct or 0, dog_pct, 3))
+    -- the race (a book not opened yet only shows the start line)
+    local stats = Data.readingStats(rec.hash)
+    local race = Race.state(rec, stats, plugin.settings, plugin:runner(), plugin:rival(), nil, not rec.opened)
+    local lines = Race.lines(plugin, rec, race, plugin.cache)
+    local chase = Chase:new{
+        width = cw, height = math.floor(H * 0.16),
+        you = plugin:runner(), rival = plugin:rival(),
+        you_pct = race.you_pct, rival_pct = race.rival_pct, napping = race.napping,
+        you_says = lines.you_says, rival_says = lines.rival_says, fish_says = lines.fish_says,
+        animate = false, t = 1,
+    }
+    chase.show_parent = self
+    add(chase)
     add(UI.vspace(s(4)))
-    local left = rec.opened and string.format("Cat: here, %d%%", math.floor((rec.pct or 0) * 100 + 0.5)) or "Cat: not started"
-    local right = dog_pct and ("Dog: Readest, " .. (Data.ago(rec.readest.updated_at) or "synced")) or "Dog: not racing"
-    add(UI.spread(cw, UI.text(left, "body", 10, UI.INK2), UI.text(right, "body", 10, UI.INK2)))
+    add(UI.spread(cw, UI.text(lines.you_label, "body", 10, UI.INK2), UI.text(lines.rival_label, "body", 10, UI.INK2)))
     add(UI.vspace(s(10)))
 
     -- actions
@@ -133,9 +130,11 @@ function Book:build()
     end
     add(buttons)
 
-    -- Pip's room, pinned to the bottom
+    -- the rival's room, pinned to the bottom
     local room_h = math.floor(H * 0.13)
-    local room = UI.room(cw, room_h, "dog_sit", UI.spriteScale("dog_sit", cw * 0.12), "Pip", self:dogLine(rec))
+    local rival = Race.animal(plugin:rival())
+    local room = UI.room(cw, room_h, rival.still, math.min(UI.spriteScale(rival.still, cw * 0.12),
+        UI.spriteScaleH(rival.still, room_h * 0.6)), plugin:petName(rival.id), self:rivalLine(rec, lines))
     local used = main:getSize().h + room_h + 2 * m
     return FrameContainer:new{
         background = UI.WHITE, bordersize = 0, margin = 0, padding = m,

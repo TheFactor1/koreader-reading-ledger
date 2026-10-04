@@ -47,7 +47,7 @@ local function row(cw, icon, label, hint, value, callback)
         -- icons sit on the left margin, like everything else on the page
         local LeftContainer = require("ui/widget/container/leftcontainer")
         left[#left + 1] = LeftContainer:new{ dimen = Geom:new{ w = icon_w, h = s(26) },
-            UI.sprite(icon, UI.spriteScaleH(icon, icon == "fish" and s(11) or s(20))) }
+            UI.sprite(icon, math.min(UI.spriteScaleH(icon, icon == "fish" and s(11) or s(20)), UI.spriteScale(icon, icon_w))) }
     else
         left[#left + 1] = UI.hspace(icon_w)
     end
@@ -77,14 +77,16 @@ function Settings:build()
     add(UI.header(cw, "SETTINGS", UI.text("READING LEDGER", "pix", 11, UI.INK2)))
     add(UI.rule(cw, s(1), UI.INK3))
 
-    add(row(cw, "cat_sit", "The cat's name", "Runs for this device", p:petName("cat"):upper(),
-        function() p:editPetName("cat") end))
-    add(row(cw, "dog_sit", "The dog's name", "Runs for Readest on your other devices", p:petName("dog"):upper(),
-        function() p:editPetName("dog") end))
+    local Race = require("ledger_race")
+    local you, rival = Race.animal(p:runner()), Race.animal(p:rival())
+    add(row(cw, you.still, "You run as", "Tap to pick an animal or rename it",
+        (you.label .. " · " .. p:petName(you.id)):upper(), function() p:chooseAnimal("runner") end))
+    add(row(cw, rival.still, "Your rival", rival.hint,
+        (rival.label .. " · " .. p:petName(rival.id)):upper(), function() p:chooseAnimal("rival") end))
     add(row(cw, "fish", "Hardcover", st.hardcover_hint, st.hardcover, function() p:editHardcoverKey() end))
-    add(row(cw, nil, "Readest", "Where the dog gets its position", st.readest))
+    add(row(cw, nil, "Readest", "Your place there counts too", st.readest))
     add(row(cw, nil, "Bookbridge", "Requests, new arrivals, search", st.bookbridge))
-    add(row(cw, nil, "Animations", "The pets run in when the page opens",
+    add(row(cw, nil, "Animations", "The runners sprint in when the page opens",
         p:animationsOn() and "ON" or "OFF", function() p:toggleAnimations() end))
     add(row(cw, nil, "Refresh now", "Hardcover, trending and requests", "›", function() p:refreshRemote(true) end))
     add(row(cw, nil, "About and credits", "Sprites, fonts, who made this", "›", function() p:showAbout() end))

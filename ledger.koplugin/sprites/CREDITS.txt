@@ -5,6 +5,10 @@ cat_*.png  Cat sprites by Shepardskin
            https://opengameart.org/content/cat-sprites
 dog_*.png  Dog Spritesheets (white) by Jason of GDN
            https://opengameart.org/content/dog-spritesheets
+rabbit_*.png  Animated Wild Animals (rabbit) by ScratchIO
+           https://opengameart.org/content/animated-wild-animals
+turtle_*.png  Animated turtle by Sogomn
+           https://opengameart.org/content/animated-turtle
 fish.png   drawn for this plugin
 
 Converted to 16 grey levels for e-ink; poses cut from the original sheets.

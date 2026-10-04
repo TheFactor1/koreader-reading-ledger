@@ -1,9 +1,9 @@
 --[[
 The Reading Ledger: a front page for KOReader with pixel pets.
 
-Every book is a race between Biscuit the cat (your place on this device) and
-Pip the dog (your place in Readest, on your phone or tablet). Pip also
-fetches new books; Biscuit naps on the ones you're waiting for; your yearly
+Every book is a race: you pick your runner (cat, dog, rabbit or tortoise)
+and a rival that reads a little more than you usually do (ledger_race.lua).
+Your place is the furthest of this device and Readest. Your yearly
 Hardcover goal is paid in fish.
 
 Sources, all optional: this device, the Readest plugin, Bookbridge (requests,
@@ -32,6 +32,7 @@ local Library = require("ledger_library")
 local Reading = require("ledger_reading")
 local Settings = require("ledger_settings")
 local Net = require("ledger_net")
+local Race = require("ledger_race")
 local UI = require("ledger_ui")
 
 local REFRESH_EVERY = 30 * 60   -- remote data older than this is refreshed on show
@@ -213,24 +214,34 @@ function Ledger:openFiles()
 end
 
 -- ---------------------------------------------------------------- settings
-local PET_DEFAULT = { cat = "Biscuit", dog = "Pip" }
-
-function Ledger:petName(which)
-    local n = self.settings:readSetting(which .. "_name")
-    return (n and n ~= "") and n or PET_DEFAULT[which]
+-- Your runner and your rival (animal ids from ledger_race.lua); never the same.
+function Ledger:runner()
+    return Race.animal(self.settings:readSetting("runner") or "cat").id
 end
 
-function Ledger:editPetName(which)
+function Ledger:rival()
+    local r = Race.animal(self.settings:readSetting("rival") or "dog").id
+    if r == self:runner() then r = self:runner() == "dog" and "cat" or "dog" end
+    return r
+end
+
+-- Each animal keeps its own name (cat_name, dog_name, ...).
+function Ledger:petName(animal)
+    local n = self.settings:readSetting(animal .. "_name")
+    return (n and n ~= "") and n or Race.animal(animal).name
+end
+
+function Ledger:editPetName(animal)
     local dialog
     dialog = InputDialog:new{
-        title = which == "cat" and _("The cat's name") or _("The dog's name"),
-        input = self:petName(which),
+        title = string.format(_("The %s's name"), Race.animal(animal).label:lower()),
+        input = self:petName(animal),
         buttons = { {
             { text = _("Cancel"), id = "close", callback = function() UIManager:close(dialog) end },
             { text = _("Save"), is_enter_default = true, callback = function()
                 local name = dialog:getInputText():gsub("^%s+", ""):gsub("%s+$", "")
                 UIManager:close(dialog)
-                self.settings:saveSetting(which .. "_name", name ~= "" and name or nil)
+                self.settings:saveSetting(animal .. "_name", name ~= "" and name or nil)
                 self.settings:flush()
                 self:redraw()
             end },
@@ -238,6 +249,37 @@ function Ledger:editPetName(which)
     }
     UIManager:show(dialog)
     dialog:onShowKeyboard()
+end
+
+-- Pick your runner ("runner") or your rival ("rival"), or rename the
+-- current one. A rival picked as your runner swaps places with you.
+function Ledger:chooseAnimal(which)
+    local ButtonDialog = require("ui/widget/buttondialog")
+    local current = which == "runner" and self:runner() or self:rival()
+    local other = which == "runner" and self:rival() or self:runner()
+    local dialog
+    local buttons = {}
+    for _, a in ipairs(Race.ANIMALS) do
+        local text = a.label .. " · " .. self:petName(a.id)
+        if which == "rival" then text = text .. " -- " .. a.hint:lower() end
+        if a.id == current then text = "✓ " .. text end
+        buttons[#buttons + 1] = { { text = text, align = "left", callback = function()
+            UIManager:close(dialog)
+            if a.id == other then self.settings:saveSetting(which == "runner" and "rival" or "runner", current) end
+            self.settings:saveSetting(which, a.id)
+            self.settings:flush()
+            self:redraw()
+        end } }
+    end
+    buttons[#buttons + 1] = { { text = string.format(_("Rename %s"), self:petName(current)), callback = function()
+        UIManager:close(dialog)
+        self:editPetName(current)
+    end } }
+    dialog = ButtonDialog:new{
+        title = which == "runner" and _("You run as") or _("Your rival"),
+        buttons = buttons,
+    }
+    UIManager:show(dialog)
 end
 
 function Ledger:animationsOn()
@@ -278,9 +320,9 @@ function Ledger:showAbout()
     UIManager:show(TextViewer:new{
         title = _("Reading Ledger"),
         text = table.concat({
-            "Every book is a race: the cat runs for this device, the dog for Readest on your phone or tablet, and a fish waits at the finish.",
+            "Every book is a race against a rival that reads a little more than you usually do; a fish waits at the finish. Your place is the furthest of this device and Readest.",
             "",
-            "Cat sprites by Shepardskin and dog sprites by Jason of GDN, both public domain (CC0), from OpenGameArt.org.",
+            "Sprites from OpenGameArt.org, all public domain (CC0): cat by Shepardskin, dog by Jason of GDN, rabbit by Scratchio, tortoise by Sogomn.",
             "Fonts: Silkscreen and Atkinson Hyperlegible (SIL Open Font License).",
             "Trending books from Open Library.",
             "",

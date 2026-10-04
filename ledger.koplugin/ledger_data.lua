@@ -380,12 +380,24 @@ function Data.readingStats(hash)
     local all_secs = tonumber(one("SELECT sum(duration) FROM page_stat_data WHERE start_time >= ?", midnight - 30 * 86400))
     local all_pages = tonumber(one("SELECT count(*) FROM page_stat_data WHERE start_time >= ?", midnight - 30 * 86400))
     if all_secs and all_pages and all_pages > 0 then out.all_pace = all_secs / all_pages end
+    -- your usual pages per reading day (days you read at all, last 30)
+    local days = tonumber(one("SELECT count(DISTINCT date(start_time, 'unixepoch', 'localtime')) FROM page_stat_data WHERE start_time >= ?", midnight - 30 * 86400))
+    local distinct = tonumber(one("SELECT count(DISTINCT id_book || ':' || page) FROM page_stat_data WHERE start_time >= ?", midnight - 30 * 86400))
+    if days and days > 0 and distinct then out.per_day = distinct / days end
     if hash then
         local id = one("SELECT id FROM book WHERE md5 = ?", hash)
         if id then
             local secs = tonumber(one("SELECT sum(duration) FROM page_stat_data WHERE id_book = ?", id))
             local pages = tonumber(one("SELECT count(*) FROM page_stat_data WHERE id_book = ?", id))
             if secs and pages and pages > 0 then out.pace = secs / pages end
+            out.book_start = tonumber(one("SELECT min(start_time) FROM page_stat_data WHERE id_book = ?", id))
+            -- where you were when the statistics first saw this book (you may
+            -- have started it elsewhere), as a fraction of the book
+            local first_page = tonumber(one("SELECT page FROM page_stat_data WHERE id_book = ? ORDER BY start_time LIMIT 1", id))
+            local first_total = tonumber(one("SELECT total_pages FROM page_stat_data WHERE id_book = ? ORDER BY start_time LIMIT 1", id))
+            if first_page and first_total and first_total > 0 then
+                out.book_start_pct = math.max(0, (first_page - 1) / first_total)
+            end
         end
     end
     db:close()
