@@ -325,6 +325,22 @@ function UI.race(width, cat_pct, dog_pct, frame)
         cat_pct = cat_pct, dog_pct = dog_pct, dog_sitting = not dog_pct }
 end
 
+-- ---------------------------------------------------------------- mini track
+-- A thin line under a cover: grey track, black up to how far you've read.
+local MiniTrack = Widget:extend{ width = nil, pct = 0 }
+
+function MiniTrack:getSize() return Geom:new{ w = self.width, h = Screen:scaleBySize(4) } end
+
+function MiniTrack:paintTo(bb, x, y)
+    local h = Screen:scaleBySize(4)
+    local line = math.max(1, Screen:scaleBySize(1))
+    bb:paintRect(x, y + math.floor((h - line) / 2), self.width, line, UI.INK3)
+    local fill = math.floor(self.width * math.max(0, math.min(1, self.pct or 0)))
+    if fill > 0 then bb:paintRect(x, y, fill, h, UI.BLACK) end
+end
+
+function UI.miniTrack(width, pct) return MiniTrack:new{ width = width, pct = pct } end
+
 -- ---------------------------------------------------------------- goal fish
 local FishRow = Widget:extend{ fish = nil, total = 12, done = 0, gap = 0 }
 

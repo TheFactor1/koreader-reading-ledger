@@ -11,7 +11,6 @@ local FrameContainer = require("ui/widget/container/framecontainer")
 local Geom = require("ui/geometry")
 local HorizontalGroup = require("ui/widget/horizontalgroup")
 local InputContainer = require("ui/widget/container/inputcontainer")
-local OverlapGroup = require("ui/widget/overlapgroup")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local UIManager = require("ui/uimanager")
 local Data = require("ledger_data")
@@ -132,36 +131,37 @@ function Library:nextSort()
     self:redraw()
 end
 
--- A cover with the Ledger badge in its bottom-left corner.
+-- A cover, untouched; the status lives underneath it: a thin progress line
+-- while you're reading, and a small grey note at the end of the author line.
 function Library:tile(rec, w, h, text_w)
     text_w = text_w or w
     local function s(n) return Screen:scaleBySize(n) end
     local cover = UI.cover(rec, w, h)
     local st = Data.status(rec)
-    local badge
-    local icon_h = math.max(s(14), math.floor(w * 0.2))
+    local vg = VerticalGroup:new{ align = "left", cover, UI.vspace(s(3)) }
     if st == "reading" then
-        badge = HorizontalGroup:new{ align = "center",
-            UI.sprite("cat_sit", UI.spriteScaleH("cat_sit", icon_h)), UI.hspace(s(3)),
-            UI.text(string.format("%d%%", math.floor((rec.pct or 0) * 100 + 0.5)), "pix", 9) }
+        vg[#vg + 1] = UI.miniTrack(w, rec.pct or 0)
+    else
+        vg[#vg + 1] = UI.vspace(s(4))
+    end
+    vg[#vg + 1] = UI.vspace(s(4))
+    vg[#vg + 1] = UI.text(rec.title or "?", "bold", 10, UI.BLACK, text_w)
+
+    local note
+    local icon_h = s(11)
+    if st == "reading" then
+        note = UI.text(string.format("%d%%", math.floor((rec.pct or 0) * 100 + 0.5)), "body", 9, UI.INK2)
     elseif st == "new" then
-        badge = HorizontalGroup:new{ align = "center",
-            UI.sprite("dog_sit", UI.spriteScaleH("dog_sit", icon_h)), UI.hspace(s(3)), UI.text("NEW", "pix", 9) }
+        note = HorizontalGroup:new{ align = "center",
+            UI.sprite("dog_sit", UI.spriteScaleH("dog_sit", icon_h)), UI.hspace(s(3)), UI.text("new", "body", 9, UI.INK2) }
     elseif st == "finished" then
-        badge = HorizontalGroup:new{ align = "center",
-            UI.sprite("fish", UI.spriteScale("fish", w * 0.2)), UI.hspace(s(3)), UI.text("DONE", "pix", 9) }
+        note = HorizontalGroup:new{ align = "center",
+            UI.sprite("fish", UI.spriteScaleH("fish", math.floor(icon_h * 0.7))), UI.hspace(s(3)), UI.text("done", "body", 9, UI.INK2) }
     end
-    local stack = OverlapGroup:new{ dimen = Geom:new{ w = w, h = h }, cover }
-    if badge then
-        local framed = FrameContainer:new{
-            background = UI.WHITE, bordersize = s(2), color = UI.BLACK, margin = 0,
-            padding = s(2), padding_left = s(4), padding_right = s(4), badge }
-        framed.overlap_offset = { s(4), h - framed:getSize().h - s(4) }
-        stack[#stack + 1] = framed
-    end
-    local vg = VerticalGroup:new{ align = "left", stack, UI.vspace(s(4)),
-        UI.text(rec.title or "?", "bold", 10, UI.BLACK, text_w) }
-    if rec.author then vg[#vg + 1] = UI.text(rec.author, "body", 9, UI.INK2, text_w) end
+    local note_w = note and note:getSize().w + s(6) or 0
+    -- the note lines up with the cover's right edge, not the column's
+    local author = UI.text(rec.author or "", "body", 9, UI.INK2, math.max(s(20), w - note_w))
+    vg[#vg + 1] = note and UI.spread(w, author, note) or author
     -- every tile takes its column's full width, so the grid stays aligned
     local LeftContainer = require("ui/widget/container/leftcontainer")
     local cell = LeftContainer:new{ dimen = Geom:new{ w = text_w, h = vg:getSize().h }, vg }
@@ -195,7 +195,7 @@ function Library:build()
     local cols = cw >= s(420) and 4 or 3
     local gap = s(12)
     local tile_w = math.floor((cw - (cols - 1) * gap) / cols)
-    local text_h = s(40)
+    local text_h = s(50)
     local grid_h = H - 2 * m - top:getSize().h - foot_h
     -- as many full-width rows as fit; if two-thirds of another row is left
     -- over, shrink the covers a little so it fits too
