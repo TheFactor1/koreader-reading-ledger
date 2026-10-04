@@ -28,8 +28,9 @@ local _ = require("gettext")
 local Bg = require("ledger_bg")
 local Book = require("ledger_book")
 local Data = require("ledger_data")
-local Home = require("ledger_home")
 local Library = require("ledger_library")
+local Reading = require("ledger_reading")
+local Settings = require("ledger_settings")
 local Net = require("ledger_net")
 local UI = require("ledger_ui")
 
@@ -88,28 +89,66 @@ function Ledger:collect()
 end
 
 -- ---------------------------------------------------------------- showing
+-- Three pages, one on screen at a time: Reading (the main one), Library and
+-- Settings, switched by the tab bar at the bottom. The book page opens on
+-- top of whichever is showing.
 function Ledger:show()
-    if self.home then UIManager:close(self.home) end
     self.cache = Data.loadCache()
-    local data = self:collect()
-    self.home = Home:new{ plugin = self, data = data, cache = self.cache }
-    UIManager:show(self.home, "flashui")
-    self:fetchCovers(data)
+    self:showTab("reading")
     self:refreshRemote(false)
 end
 
+function Ledger:libraryDirs()
+    local bb = self:bookbridge()
+    local dirs = { G_reader_settings:readSetting("home_dir") }
+    if bb and bb.download_dir and bb.download_dir ~= dirs[1] then dirs[#dirs + 1] = bb.download_dir end
+    return dirs
+end
+
+function Ledger:showTab(id, opts)
+    opts = opts or {}
+    self.cache = self.cache or Data.loadCache()
+    local old = self.page
+    local page
+    if id == "library" then
+        local books = Data.library(self:libraryDirs(), Data.readestPositions(self.ui), Data.hardcoverMatches())
+        page = Library:new{ plugin = self, books = books, filter = opts.filter or "all" }
+    elseif id == "settings" then
+        page = Settings:new{ plugin = self }
+    else
+        id = "reading"
+        local data = self:collect()
+        page = Reading:new{ plugin = self, data = data, cache = self.cache }
+        self:fetchCovers(data)
+    end
+    self.page, self.tab = page, id
+    UIManager:show(page, old and "partial" or "flashui")
+    if old and UIManager:isWidgetShown(old) then UIManager:close(old) end
+    if id == "library" then
+        self:fetchCoversFor(page:visible(), function() page:refreshCovers() end)
+    elseif id == "reading" and page.chase then
+        page.chase:runIn()
+    end
+end
+
+-- Remote data or covers changed: redraw whatever page is showing.
 function Ledger:redraw()
-    if self.home and UIManager:isWidgetShown(self.home) then
-        self.home:update(self:collect(), self.cache)
+    local page = self.page
+    if not (page and UIManager:isWidgetShown(page)) then return end
+    if self.tab == "reading" then
+        page:update(self:collect(), self.cache)
+    elseif self.tab == "library" then
+        page:refreshCovers()
+    else
+        page:update()
     end
 end
 
 function Ledger:closeAll()
     -- (not ipairs over the widgets: it stops at the first nil)
     if self.book_page and UIManager:isWidgetShown(self.book_page) then UIManager:close(self.book_page) end
-    if self.library and UIManager:isWidgetShown(self.library) then UIManager:close(self.library) end
-    if self.home and UIManager:isWidgetShown(self.home) then UIManager:close(self.home) end
-    self.book_page, self.library, self.home = nil, nil, nil
+    if self.page and UIManager:isWidgetShown(self.page) then UIManager:close(self.page) end
+    self.book_page, self.page, self.tab = nil, nil, nil
     UI.freeSprites()
 end
 
@@ -125,6 +164,12 @@ function Ledger:showBook(rec)
             if ok and type(hc) == "table" and page and UIManager:isWidgetShown(page) then page:update(hc) end
         end, 30)
     end
+end
+
+-- The whole description, from the Reading page.
+function Ledger:showDescription(rec, text)
+    local TextViewer = require("ui/widget/textviewer")
+    UIManager:show(TextViewer:new{ title = rec.title, text = text })
 end
 
 -- KOReader's cover cache extracts covers in the background; ask for the
@@ -150,6 +195,7 @@ end
 
 function Ledger:fetchCovers(data)
     local list = { data.lead }
+    for _, r in ipairs(data.reading or {}) do list[#list + 1] = r end
     for _, r in ipairs(data.just_in or {}) do list[#list + 1] = r end
     self:fetchCoversFor(list, function()
         if self.book_page and UIManager:isWidgetShown(self.book_page) then
@@ -159,20 +205,88 @@ function Ledger:fetchCovers(data)
     end)
 end
 
-function Ledger:showLibrary()
-    local bb = self:bookbridge()
-    local dirs = { G_reader_settings:readSetting("home_dir") }
-    if bb and bb.download_dir and bb.download_dir ~= dirs[1] then dirs[#dirs + 1] = bb.download_dir end
-    local books = Data.library(dirs, Data.readestPositions(self.ui), Data.hardcoverMatches())
-    if self.library and UIManager:isWidgetShown(self.library) then UIManager:close(self.library) end
-    self.library = Library:new{ plugin = self, books = books }
-    UIManager:show(self.library, "flashui")
-    self:fetchCoversFor(self.library:visible(), function() self.library:refreshCovers() end)
-end
+function Ledger:showLibrary() self:showTab("library") end
 
 -- Out to KOReader's own file browser (folders, file operations).
 function Ledger:openFiles()
     self:closeAll()
+end
+
+-- ---------------------------------------------------------------- settings
+local PET_DEFAULT = { cat = "Biscuit", dog = "Pip" }
+
+function Ledger:petName(which)
+    local n = self.settings:readSetting(which .. "_name")
+    return (n and n ~= "") and n or PET_DEFAULT[which]
+end
+
+function Ledger:editPetName(which)
+    local dialog
+    dialog = InputDialog:new{
+        title = which == "cat" and _("The cat's name") or _("The dog's name"),
+        input = self:petName(which),
+        buttons = { {
+            { text = _("Cancel"), id = "close", callback = function() UIManager:close(dialog) end },
+            { text = _("Save"), is_enter_default = true, callback = function()
+                local name = dialog:getInputText():gsub("^%s+", ""):gsub("%s+$", "")
+                UIManager:close(dialog)
+                self.settings:saveSetting(which .. "_name", name ~= "" and name or nil)
+                self.settings:flush()
+                self:redraw()
+            end },
+        } },
+    }
+    UIManager:show(dialog)
+    dialog:onShowKeyboard()
+end
+
+function Ledger:animationsOn()
+    return self.settings:readSetting("animations") ~= false
+end
+
+function Ledger:toggleAnimations()
+    self.settings:saveSetting("animations", not self:animationsOn())
+    self.settings:flush()
+    self:redraw()
+end
+
+-- What each source looks like, for the Settings page.
+function Ledger:sourceStatus()
+    local c = self.cache or {}
+    local out = {}
+    if c.hardcover and c.hardcover.username then
+        out.hardcover = string.upper(c.hardcover.username)
+        out.hardcover_hint = "Signed in -- shelves and yearly goal"
+    elseif self:hardcoverToken() then
+        out.hardcover = c.hardcover_rejected and "KEY REFUSED" or "KEY SET"
+        out.hardcover_hint = c.hardcover_rejected and "Hardcover didn't accept the key" or "Checking on the next refresh"
+    else
+        out.hardcover = "ADD KEY"
+        out.hardcover_hint = "Without one, trending books come from Open Library"
+    end
+    local rs = G_reader_settings:readSetting("readest_sync")
+    if type(rs) == "table" and rs.access_token and rs.user_id then out.readest = "SIGNED IN"
+    elseif self.ui and self.ui.readest then out.readest = "NOT SIGNED IN"
+    else out.readest = "NOT INSTALLED" end
+    local bb = self:bookbridge()
+    out.bookbridge = bb and (bb.server_url and bb.server_url ~= "" and "CONNECTED" or "NOT SET UP") or "NOT INSTALLED"
+    return out
+end
+
+function Ledger:showAbout()
+    local TextViewer = require("ui/widget/textviewer")
+    UIManager:show(TextViewer:new{
+        title = _("Reading Ledger"),
+        text = table.concat({
+            "Every book is a race: the cat runs for this device, the dog for Readest on your phone or tablet, and a fish waits at the finish.",
+            "",
+            "Cat sprites by Shepardskin and dog sprites by Jason of GDN, both public domain (CC0), from OpenGameArt.org.",
+            "Fonts: Silkscreen and Atkinson Hyperlegible (SIL Open Font License).",
+            "Trending books from Open Library.",
+            "",
+            "Written 100% by an AI (Claude, by Anthropic), directed by Matt.",
+        }, "\n"),
+    })
 end
 
 -- ---------------------------------------------------------------- remote data
@@ -265,7 +379,7 @@ function Ledger:onReaderReady()
 end
 
 function Ledger:openLibrary()
-    self:showLibrary()
+    self:showTab("library")
 end
 
 function Ledger:search()
@@ -337,9 +451,8 @@ end
 
 function Ledger:onCloseWidget()
     -- the plugin instance belongs to a FileManager or ReaderUI that is going away
-    if self.home and UIManager:isWidgetShown(self.home) then UIManager:close(self.home) end
+    if self.page and UIManager:isWidgetShown(self.page) then UIManager:close(self.page) end
     if self.book_page and UIManager:isWidgetShown(self.book_page) then UIManager:close(self.book_page) end
-    if self.library and UIManager:isWidgetShown(self.library) then UIManager:close(self.library) end
 end
 
 return Ledger

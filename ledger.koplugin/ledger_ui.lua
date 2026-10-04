@@ -200,6 +200,33 @@ function UI.button(label, callback, outlined, size)
     return UI.tappable(frame, callback)
 end
 
+-- ---------------------------------------------------------------- tab bar
+-- The three pages: Reading, Library, Settings. Equal-width tabs across the
+-- bottom; the current one is solid black.
+UI.TABS = { { id = "reading", label = "Reading" }, { id = "library", label = "Library" }, { id = "settings", label = "Settings" } }
+
+function UI.tabBar(width, active, on_select)
+    local CenterContainer = require("ui/widget/container/centercontainer")
+    local b = Screen:scaleBySize(2)
+    local h = Screen:scaleBySize(40)
+    local n = #UI.TABS
+    local gap = Screen:scaleBySize(6)
+    local tab_w = math.floor((width - (n - 1) * gap) / n)
+    local row = HorizontalGroup:new{}
+    for i, tab in ipairs(UI.TABS) do
+        if i > 1 then row[#row + 1] = HorizontalSpan:new{ width = gap } end
+        local on = tab.id == active
+        local frame = FrameContainer:new{
+            bordersize = b, color = UI.BLACK, background = on and UI.BLACK or UI.WHITE,
+            padding = 0, margin = 0,
+            CenterContainer:new{ dimen = Geom:new{ w = tab_w - 2 * b, h = h - 2 * b },
+                UI.text(tab.label:upper(), "pix", 11, on and UI.WHITE or UI.BLACK) },
+        }
+        row[#row + 1] = UI.tappable(frame, function() if not on then on_select(tab.id) end end)
+    end
+    return row
+end
+
 -- ---------------------------------------------------------------- the room
 -- A striped wall, a floor, a pet sprite and its speech bubble.
 local Room = Widget:extend{ width = nil, height = nil, sprite = nil, bubble = nil }

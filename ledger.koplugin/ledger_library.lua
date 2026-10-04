@@ -54,7 +54,7 @@ function Library:init()
 end
 
 function Library:onClose()
-    UIManager:close(self, "flashui")
+    self.plugin:closeAll()
     return true
 end
 
@@ -259,8 +259,8 @@ function Library:build()
 
     local top = VerticalGroup:new{ align = "left" }
     top[#top + 1] = UI.spread(cw,
-        UI.tappable(UI.text("< BACK", "pix", 11), function() self:onClose() end),
-        UI.text(string.format("LIBRARY · %d BOOKS", #(self.books or {})), "pix", 11))
+        UI.text("LIBRARY", "pix", 11),
+        UI.text(string.format("%d BOOKS", #(self.books or {})), "pix", 11, UI.INK2))
     top[#top + 1] = UI.vspace(s(10))
 
     local chips = HorizontalGroup:new{}
@@ -273,7 +273,8 @@ function Library:build()
     top[#top + 1] = UI.vspace(s(12))
 
     -- footer first, so the grid knows how much room it has
-    local foot_h = s(44)
+    local tabs = UI.tabBar(cw, "library", function(id) self.plugin:showTab(id) end)
+    local foot_h = s(44) + s(12) + tabs:getSize().h
     -- four across on anything Paperwhite-sized or bigger, three on small screens
     local cols = cw >= s(420) and 4 or 3
     local gap = s(12)
@@ -320,7 +321,7 @@ function Library:build()
         UI.button("Next >", function() self:onNextPage() end, true, 10),
     }
     local files = UI.button("Files", function() self.plugin:openFiles() end, true, 10)
-    local foot = UI.spread(cw, nav, files)
+    local foot = VerticalGroup:new{ align = "left", UI.spread(cw, nav, files), UI.vspace(s(12)), tabs }
 
     local used = top:getSize().h + grid:getSize().h + foot:getSize().h + 2 * m
     return FrameContainer:new{

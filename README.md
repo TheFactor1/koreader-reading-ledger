@@ -14,16 +14,24 @@ what's trending on Open Library.
 
 ## Status
 
-Working (2026-10-04): front page, book page, the race, Catch up with the dog,
-Open Library trending, Hardcover shelves and goal, and the **library** -- every
-book on the device as a paged grid of covers, each wearing a pet badge (the cat
-and your % while reading, the dog and NEW for new arrivals, a fish when
-finished), with All / Reading / New / Finished filters, sort by recent, title,
-author or series, and Files for KOReader's own file browser. Opened from the
-main menu as **Reading Ledger** (or a gesture: "Reading Ledger").
+Three pages, switched by a tab bar at the bottom (2026-10-04):
 
-Still to come: the onboarding screen, replacing Bookshelf as the home screen,
-the Race results screen, and a run with the real Readest plugin signed in.
+- **Reading** (the main page): the book you're on -- big cover, title, series,
+  pages and time left (from your own pace in KOReader's statistics), the
+  description (tap for all of it), and the **chase**: the cat runs for this
+  device and the dog for Readest along a field to a chequered flag where a fish
+  waits. They sprint in from the start line when the page opens; tap the cat,
+  the dog or the fish and they tell you where they are. Today / this week /
+  streak, what Pip fetched and what's on order, the yearly goal in fish.
+  Several books on the go: swipe or tap < > to switch.
+- **Library**: every book on the device as a paged grid of covers, filters and
+  sort, Files for KOReader's own browser. (Status bars are still being chosen.)
+- **Settings**: the pets' names, Hardcover key, Readest and Bookbridge status,
+  animations on/off, refresh, about and credits.
+
+Still to come: progress bars in the library, onboarding, replacing Bookshelf
+as the home screen, the Race results screen, and a run with the real Readest
+plugin signed in.
 
 ## Sources (all optional)
 

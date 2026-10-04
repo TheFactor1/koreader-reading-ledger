@@ -338,6 +338,90 @@ function Data.pagesToday()
     return n
 end
 
+-- Reading statistics from KOReader's statistics database:
+--   pace       seconds per page for this book (nil if not read with stats on)
+--   today      pages turned today, all books
+--   week       pages turned in the last 7 days, all books
+--   streak     consecutive days with reading, up to today (or yesterday)
+function Data.readingStats(hash)
+    local out = { today = 0, week = 0, streak = 0 }
+    local db_path = DataStorage:getSettingsDir() .. "/statistics.sqlite3"
+    if lfs.attributes(db_path, "mode") ~= "file" then return out end
+    local ok, SQ3 = pcall(require, "lua-ljsqlite3/init")
+    if not ok then return out end
+    local dok, db = pcall(SQ3.open, db_path, "ro")
+    if not dok or not db then return out end
+    local t = os.date("*t")
+    local midnight = os.time{ year = t.year, month = t.month, day = t.day, hour = 0 }
+    local function one(sql, ...)
+        local r
+        local args = { ... }
+        pcall(function()
+            local stmt = db:prepare(sql)
+            local row = stmt:reset():bind(unpack(args)):step()
+            r = row and row[1]
+            stmt:close()
+        end)
+        return r
+    end
+    out.today = tonumber(one("SELECT count(DISTINCT id_book || ':' || page) FROM page_stat_data WHERE start_time >= ?", midnight)) or 0
+    out.week = tonumber(one("SELECT count(DISTINCT id_book || ':' || page) FROM page_stat_data WHERE start_time >= ?", midnight - 6 * 86400)) or 0
+    -- streak: walk back day by day while there was reading
+    local day_start = midnight
+    if out.today == 0 then day_start = midnight - 86400 end
+    for _ = 1, 365 do
+        local n = tonumber(one("SELECT count(*) FROM page_stat_data WHERE start_time >= ? AND start_time < ?", day_start, day_start + 86400)) or 0
+        if n == 0 then break end
+        out.streak = out.streak + 1
+        day_start = day_start - 86400
+    end
+    if hash then
+        local id = one("SELECT id FROM book WHERE md5 = ?", hash)
+        if id then
+            local secs = tonumber(one("SELECT sum(duration) FROM page_stat_data WHERE id_book = ?", id))
+            local pages = tonumber(one("SELECT count(*) FROM page_stat_data WHERE id_book = ?", id))
+            if secs and pages and pages > 0 then out.pace = secs / pages end
+        end
+    end
+    db:close()
+    return out
+end
+
+-- "about 6 h left" from a pace and the pages still to go.
+function Data.timeLeft(pace, pages, pct)
+    if not (pace and pages and pages > 0) then return nil end
+    local left = pace * pages * (1 - (pct or 0))
+    if left < 60 then return "almost done" end
+    if left < 3600 then return string.format("about %d min left", math.floor(left / 60 + 0.5)) end
+    local h = left / 3600
+    if h < 10 then return string.format("about %.1f h left", h):gsub("%.0 h", " h") end
+    return string.format("about %d h left", math.floor(h + 0.5))
+end
+
+-- The book's description: the sidecar's doc_props, else the cover cache.
+-- HTML tags and entities stripped, whitespace collapsed.
+function Data.description(rec)
+    local desc
+    if rec.file and DocSettings:hasSidecarFile(rec.file) then
+        local ok, ds = pcall(DocSettings.open, DocSettings, rec.file)
+        if ok and ds then
+            local props = ds:readSetting("doc_props") or {}
+            if type(props.description) == "string" then desc = props.description end
+        end
+    end
+    if not desc then
+        local bok, BIM = pcall(require, "bookinfomanager")
+        if bok and BIM and rec.file then
+            local iok, info = pcall(BIM.getBookInfo, BIM, rec.file, false)
+            if iok and info and type(info.description) == "string" then desc = info.description end
+        end
+    end
+    if not desc or desc == "" then return nil end
+    desc = desc:gsub("<[^>]+>", " "):gsub("&nbsp;", " "):gsub("&amp;", "&"):gsub("&quot;", '"')
+        :gsub("&#39;", "'"):gsub("&lt;", "<"):gsub("&gt;", ">"):gsub("%s+", " ")
+    return (desc:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
 -- Days since any book was last opened (nil if never).
 function Data.daysSinceReading(hist)
     local last = hist and hist[1] and hist[1].last_open
