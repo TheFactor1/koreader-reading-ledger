@@ -133,28 +133,47 @@ end
 
 -- A cover, untouched; the status lives underneath it: a thin progress line
 -- while you're reading, and a small grey note at the end of the author line.
+-- Bar styles (Menu > Library bar): "under" a thick bar under the cover,
+-- "band" the bar set into the cover's bottom edge, "blocks" ten pixel
+-- segments, "side" a bar with the number to its right. Every book gets
+-- the same element: NEW (empty) and DONE (full) for the others.
+local BAR_STYLE_DEFAULT = "under"
+
 function Library:tile(rec, w, h, text_w)
     text_w = text_w or w
     local function s(n) return Screen:scaleBySize(n) end
-    local cover = UI.cover(rec, w, h)
+    local style = G_reader_settings:readSetting("ledger_bar_style") or BAR_STYLE_DEFAULT
     local st = Data.status(rec)
-    local vg = VerticalGroup:new{ align = "left", cover, UI.vspace(s(3)) }
+    local pct, label
     if st == "reading" then
-        vg[#vg + 1] = UI.miniTrack(w, rec.pct or 0)
-    else
-        vg[#vg + 1] = UI.vspace(s(4))
+        pct = rec.pct or 0
+        label = string.format("%d%%", math.floor(pct * 100 + 0.5))
+    elseif st == "finished" then
+        pct, label = 1, "DONE"
+    elseif st == "new" then
+        pct, label = 0, "NEW"
     end
-    vg[#vg + 1] = UI.vspace(s(4))
-    -- everything under the cover lines up with the cover: title and author
-    -- from its left edge, the note ending exactly at its right edge, all
-    -- notes the same plain grey text
+    local bar_h = s(16)
+    local bar
+    if label then
+        bar = UI.statusBar(w, bar_h, pct, label, style == "blocks" and "blocks" or "solid", style == "side")
+    end
+
+    local vg = VerticalGroup:new{ align = "left" }
+    if style == "band" and bar then
+        local cover = UI.cover(rec, w, h)
+        local OverlapGroup = require("ui/widget/overlapgroup")
+        bar.overlap_offset = { 0, h - bar_h }
+        vg[#vg + 1] = OverlapGroup:new{ dimen = Geom:new{ w = w, h = h }, cover, bar }
+        vg[#vg + 1] = UI.vspace(s(6))
+    else
+        vg[#vg + 1] = UI.cover(rec, w, h)
+        vg[#vg + 1] = UI.vspace(s(4))
+        vg[#vg + 1] = bar or UI.vspace(bar_h)
+        vg[#vg + 1] = UI.vspace(s(5))
+    end
     vg[#vg + 1] = UI.text(rec.title or "?", "bold", 10, UI.BLACK, w)
-    local note_text = (st == "reading" and string.format("%d%%", math.floor((rec.pct or 0) * 100 + 0.5)))
-        or (st == "new" and "new") or (st == "finished" and "done") or nil
-    local note = note_text and UI.text(note_text, "body", 9, UI.INK2)
-    local note_w = note and note:getSize().w + s(8) or 0
-    local author = UI.text(rec.author or "", "body", 9, UI.INK2, math.max(s(20), w - note_w))
-    vg[#vg + 1] = note and UI.spread(w, author, note) or author
+    vg[#vg + 1] = UI.text(rec.author or "", "body", 9, UI.INK2, w)
     -- every tile takes its column's full width, so the grid stays aligned
     local LeftContainer = require("ui/widget/container/leftcontainer")
     local cell = LeftContainer:new{ dimen = Geom:new{ w = text_w, h = vg:getSize().h }, vg }
@@ -188,7 +207,7 @@ function Library:build()
     local cols = cw >= s(420) and 4 or 3
     local gap = s(12)
     local tile_w = math.floor((cw - (cols - 1) * gap) / cols)
-    local text_h = s(50)
+    local text_h = s(64)
     local grid_h = H - 2 * m - top:getSize().h - foot_h
     -- as many full-width rows as fit; if two-thirds of another row is left
     -- over, shrink the covers a little so it fits too

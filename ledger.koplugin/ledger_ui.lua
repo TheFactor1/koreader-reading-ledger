@@ -341,6 +341,84 @@ end
 
 function UI.miniTrack(width, pct) return MiniTrack:new{ width = width, pct = pct } end
 
+-- ---------------------------------------------------------------- status bar
+-- Text drawn hollow: an outline in black with a white fill, so it reads on
+-- both the filled (black) and empty (white) part of a bar.
+local HollowText = Widget:extend{ text = nil, face = nil }
+
+function HollowText:getSize()
+    local probe = TextWidget:new{ text = self.text, face = self.face, bold = true }
+    local s = probe:getSize()
+    probe:free()
+    local o = math.max(1, Screen:scaleBySize(1))
+    return Geom:new{ w = s.w + 2 * o, h = s.h + 2 * o }
+end
+
+function HollowText:paintTo(bb, x, y)
+    local o = math.max(1, Screen:scaleBySize(1))
+    local ink = TextWidget:new{ text = self.text, face = self.face, bold = true, fgcolor = UI.BLACK }
+    for dx = -o, o do
+        for dy = -o, o do
+            if dx ~= 0 or dy ~= 0 then ink:paintTo(bb, x + o + dx, y + o + dy) end
+        end
+    end
+    ink:free()
+    local fill = TextWidget:new{ text = self.text, face = self.face, bold = true, fgcolor = UI.WHITE }
+    fill:paintTo(bb, x + o, y + o)
+    fill:free()
+end
+
+-- A thick status bar. style: "solid" (one bar) or "blocks" (ten segments);
+-- label is drawn hollow, centred; outside_label puts it to the right instead.
+local StatusBar = Widget:extend{ width = nil, height = nil, pct = 0, label = nil,
+    style = "solid", outside_label = false }
+
+function StatusBar:getSize() return Geom:new{ w = self.width, h = self.height } end
+
+function StatusBar:paintTo(bb, x, y)
+    local w, h = self.width, self.height
+    local b = math.max(1, Screen:scaleBySize(2))
+    local face = UI.face("bold", 9)
+    local label_w = 0
+    local plain
+    if self.label and self.outside_label then
+        plain = UI.text(self.label, "bold", 10)
+        label_w = plain:getSize().w + Screen:scaleBySize(6)
+    end
+    local bw = w - label_w
+    bb:paintRect(x, y, bw, h, UI.WHITE)
+    local pct = math.max(0, math.min(1, self.pct or 0))
+    if self.style == "blocks" then
+        local n, gap = 10, math.max(1, Screen:scaleBySize(2))
+        local cell = math.floor((bw - 2 * b - (n + 1) * gap) / n)
+        local filled = math.floor(pct * n + 0.5)
+        if pct > 0 and filled == 0 then filled = 1 end
+        for i = 0, n - 1 do
+            local cx = x + b + gap + i * (cell + gap)
+            local color = i < filled and UI.BLACK or UI.INK4
+            bb:paintRect(cx, y + b + gap, cell, h - 2 * (b + gap), color)
+        end
+    else
+        local fill = math.floor((bw - 2 * b) * pct)
+        if fill > 0 then bb:paintRect(x + b, y + b, fill, h - 2 * b, UI.BLACK) end
+    end
+    bb:paintBorder(x, y, bw, h, b, UI.BLACK)
+    if plain then
+        local ps = plain:getSize()
+        plain:paintTo(bb, x + bw + Screen:scaleBySize(6), y + math.floor((h - ps.h) / 2))
+        plain:free()
+    elseif self.label then
+        local t = HollowText:new{ text = self.label, face = face }
+        local ts = t:getSize()
+        t:paintTo(bb, x + math.floor((bw - ts.w) / 2), y + math.floor((h - ts.h) / 2))
+    end
+end
+
+function UI.statusBar(width, height, pct, label, style, outside_label)
+    return StatusBar:new{ width = width, height = height, pct = pct, label = label,
+        style = style or "solid", outside_label = outside_label }
+end
+
 -- ---------------------------------------------------------------- goal fish
 local FishRow = Widget:extend{ fish = nil, total = 12, done = 0, gap = 0 }
 
