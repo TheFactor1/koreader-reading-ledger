@@ -155,7 +155,10 @@ function Library:tile(rec, w, h, text_w)
     end
     local bar_h = s(16)
     local bar
-    if label then
+    if label and (style == "rider" or style == "lane") then
+        bar = UI.petBar(w, bar_h, s(16), pct, label, st, style)
+        bar_h = bar:getSize().h
+    elseif label then
         bar = UI.statusBar(w, bar_h, pct, label, style == "blocks" and "blocks" or "solid", style == "side")
     end
 
@@ -207,7 +210,7 @@ function Library:build()
     local cols = cw >= s(420) and 4 or 3
     local gap = s(12)
     local tile_w = math.floor((cw - (cols - 1) * gap) / cols)
-    local text_h = s(64)
+    local text_h = s(80)
     local grid_h = H - 2 * m - top:getSize().h - foot_h
     -- as many full-width rows as fit; if two-thirds of another row is left
     -- over, shrink the covers a little so it fits too

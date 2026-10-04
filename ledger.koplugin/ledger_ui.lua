@@ -414,6 +414,76 @@ function StatusBar:paintTo(bb, x, y)
     end
 end
 
+-- The pets on a bar. "rider": the pet stands on the bar's top edge at your
+-- place (the dog at the start of a new book, the cat at the end of a finished
+-- one). "lane": a slim race lane with a chequered end, the pet inside it and
+-- the number beside it.
+local PetBar = Widget:extend{ width = nil, bar_h = nil, pet_h = nil, pct = 0, label = nil,
+    status = nil, mode = "rider" }
+
+function PetBar:getSize()
+    if self.mode == "lane" then return Geom:new{ w = self.width, h = self.pet_h + Screen:scaleBySize(6) } end
+    return Geom:new{ w = self.width, h = self.pet_h + self.bar_h }
+end
+
+local function petFor(status)
+    if status == "new" then return "dog_sit" end
+    if status == "finished" then return "cat_sit" end
+    return "cat_run2"
+end
+
+function PetBar:paintTo(bb, x, y)
+    local function s(n) return Screen:scaleBySize(n) end
+    local pct = math.max(0, math.min(1, self.pct or 0))
+    local name = petFor(self.status)
+    local pet = UI.sprite(name, UI.spriteScaleH(name, self.pet_h))
+    local ps = pet:getSize()
+    if self.mode == "lane" then
+        local h = self.pet_h + s(6)
+        local plain = UI.text(self.label, "bold", 10)
+        local lw = plain:getSize().w + s(6)
+        local lane_w = self.width - lw
+        local b = math.max(1, s(2))
+        local flag_w = math.max(4, math.floor(h / 2))
+        local cell = math.max(2, math.floor(flag_w / 2))
+        bb:paintRect(x, y, lane_w, h, UI.WHITE)
+        -- finished track behind the runner
+        local track_w = lane_w - flag_w
+        local dash = s(4)
+        for dx = 0, track_w, dash * 2 do
+            bb:paintRect(x + dx, y + h - b - s(2), math.min(dash, track_w - dx), math.max(1, s(1)), UI.INK3)
+        end
+        for fy = 0, h - 1, cell do
+            for fx = 0, flag_w - 1, cell do
+                local black = (math.floor(fy / cell) + math.floor(fx / cell)) % 2 == 0
+                bb:paintRect(x + track_w + fx, y + fy, math.min(cell, flag_w - fx), math.min(cell, h - fy),
+                    black and UI.BLACK or UI.WHITE)
+            end
+        end
+        bb:paintBorder(x, y, lane_w, h, b, UI.BLACK)
+        local px = x + b + math.floor((track_w - ps.w - 2 * b) * pct)
+        pet:paintTo(bb, px, y + h - b - ps.h - s(1))
+        local pls = plain:getSize()
+        plain:paintTo(bb, x + lane_w + s(6), y + math.floor((h - pls.h) / 2))
+        plain:free()
+        return
+    end
+    -- rider: the bar, then the pet standing on its top edge
+    local bar = StatusBar:new{ width = self.width, height = self.bar_h, pct = pct, label = self.label }
+    bar:paintTo(bb, x, y + self.pet_h)
+    local px
+    if self.status == "new" then px = x
+    elseif self.status == "finished" then px = x + self.width - ps.w
+    else px = x + math.floor(self.width * pct) - math.floor(ps.w * 0.8) end
+    px = math.max(x, math.min(x + self.width - ps.w, px))
+    pet:paintTo(bb, px, y + self.pet_h - ps.h + s(1))
+end
+
+function UI.petBar(width, bar_h, pet_h, pct, label, status, mode)
+    return PetBar:new{ width = width, bar_h = bar_h, pet_h = pet_h, pct = pct, label = label,
+        status = status, mode = mode or "rider" }
+end
+
 function UI.statusBar(width, height, pct, label, style, outside_label)
     return StatusBar:new{ width = width, height = height, pct = pct, label = label,
         style = style or "solid", outside_label = outside_label }
