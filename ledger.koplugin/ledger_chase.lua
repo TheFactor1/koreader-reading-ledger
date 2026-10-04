@@ -37,7 +37,6 @@ function Chase:init()
     self.ges_events = {
         Tap = { GestureRange:new{ ges = "tap", range = function() return self.dimen end } },
     }
-    local function s(n) return Screen:scaleBySize(n) end
     self.pet_h = math.floor(self.height * 0.34)
     self.rects = {}
 end
@@ -126,12 +125,18 @@ function Chase:paintTo(bb, x, y)
     -- speech bubble for whoever was tapped
     if self.say and self.say.text and self.rects[self.say.who] then
         local r = self.rects[self.say.who]
+        -- as wide as the words, up to a limit
+        local max_w = math.min(math.floor(w * 0.55), s(260))
+        local one_line = UI.text(self.say.text, "body", 10)
+        local text_w = math.min(max_w, one_line:getSize().w + 1)
+        one_line:free()
         local bubble = FrameContainer:new{
             bordersize = s(2), color = UI.BLACK, background = UI.WHITE, padding = s(5), margin = 0,
-            UI.para(self.say.text, "body", 10, math.min(math.floor(w * 0.55), s(260))),
+            UI.para(self.say.text, "body", 10, text_w),
         }
         local bs = bubble:getSize()
-        local bx = math.max(x, math.min(x + w - bs.w, r.x + math.floor(r.w / 2) - math.floor(bs.w / 2)))
+        -- kept left of the finish pole, so the flag always shows
+        local bx = math.max(x, math.min(pole_x - s(6) - bs.w, r.x + math.floor(r.w / 2) - math.floor(bs.w / 2)))
         local by = math.max(y, r.y - bs.h - s(4))
         bubble:paintTo(bb, bx, by)
     end

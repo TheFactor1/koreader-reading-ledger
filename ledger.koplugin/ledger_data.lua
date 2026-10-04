@@ -375,6 +375,11 @@ function Data.readingStats(hash)
         out.streak = out.streak + 1
         day_start = day_start - 86400
     end
+    -- your pace across everything you've read lately, for a book that has
+    -- no pages of its own yet
+    local all_secs = tonumber(one("SELECT sum(duration) FROM page_stat_data WHERE start_time >= ?", midnight - 30 * 86400))
+    local all_pages = tonumber(one("SELECT count(*) FROM page_stat_data WHERE start_time >= ?", midnight - 30 * 86400))
+    if all_secs and all_pages and all_pages > 0 then out.all_pace = all_secs / all_pages end
     if hash then
         local id = one("SELECT id FROM book WHERE md5 = ?", hash)
         if id then

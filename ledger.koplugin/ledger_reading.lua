@@ -160,17 +160,25 @@ function Reading:build(squeeze)
     local right
     if #self.books > 1 then
         right = HorizontalGroup:new{ align = "center",
-            UI.tappable(UI.text("<", "pix", 13), function() self:onPrevBook() end),
+            UI.tappable(UI.text("<", "pix", 11), function() self:onPrevBook() end),
             UI.hspace(s(10)),
             UI.text(string.format("%d/%d", self.index, #self.books), "pix", 11),
             UI.hspace(s(10)),
-            UI.tappable(UI.text(">", "pix", 13), function() self:onNextBook() end),
+            UI.tappable(UI.text(">", "pix", 11), function() self:onNextBook() end),
         }
     else
         right = UI.text(os.date("%a %d %b"):upper(), "pix", 11)
     end
-    add(UI.spread(cw, UI.text("NOW READING", "pix", 11), right))
-    add(UI.vspace(s(10)))
+    add(UI.header(cw, "NOW READING", right))
+
+    -- the gaps between sections; whatever room is left over on the page is
+    -- shared out between them, so nothing bunches up at the top
+    local gaps = {}
+    local function gap(h)
+        local sp = UI.vspace(h)
+        gaps[#gaps + 1] = sp
+        add(sp)
+    end
 
     self.chase = nil
     if not rec then
@@ -181,7 +189,8 @@ function Reading:build(squeeze)
         local cover_w = math.floor(cw * (0.36 - 0.05 * squeeze))
         local cover = UI.tappable((UI.cover(rec, cover_w, math.floor(cover_w * 1.5))), function() plugin:showBook(rec) end)
         local info_w = cw - cover_w - s(16)
-        local info = VerticalGroup:new{ align = "left", UI.para(rec.title or "?", "bold", 20, info_w) }
+        local title = UI.para(rec.title or "?", "bold", 20, info_w)
+        local info = VerticalGroup:new{ align = "left", title }
         if rec.author then info[#info + 1] = UI.text(rec.author, "body", 13, UI.INK2, info_w) end
         info[#info + 1] = UI.vspace(s(8))
         if rec.series then
@@ -192,19 +201,25 @@ function Reading:build(squeeze)
         if rec.pages then facts[#facts + 1] = rec.pages .. " pages" end
         local stats = self.stats_for == rec.hash and self.stats or Data.readingStats(rec.hash)
         self.stats, self.stats_for = stats, rec.hash
-        local left = Data.timeLeft(stats.pace, rec.pages, rec.pct)
+        local left = Data.timeLeft(stats.pace or stats.all_pace, rec.pages, rec.pct)
         if left then facts[#facts + 1] = left end
         if #facts > 0 then info[#info + 1] = UI.para(table.concat(facts, " · "), "body", 11, info_w, UI.INK2) end
         info[#info + 1] = UI.vspace(s(12))
         if Data.readestAhead(rec) then
-            info[#info + 1] = UI.button("Catch up with the dog", function() plugin:continueFromReadest(rec) end)
+            -- both buttons as wide as the wider one
+            local bw = math.min(info_w, UI.buttonWidth("Catch up with the dog"))
+            info[#info + 1] = UI.button("Catch up with the dog", function() plugin:continueFromReadest(rec) end, false, nil, bw)
             info[#info + 1] = UI.vspace(s(6))
-            info[#info + 1] = UI.button("Read here", function() plugin:openBook(rec) end, true)
+            info[#info + 1] = UI.button("Read here", function() plugin:openBook(rec) end, true, nil, bw)
         else
             info[#info + 1] = UI.button("Keep reading", function() plugin:openBook(rec) end)
         end
-        add(HorizontalGroup:new{ align = "top", cover, UI.hspace(s(16)), info })
-        add(UI.vspace(s(12)))
+        -- line the cover's top edge up with the top of the title's capitals
+        -- (the title's line box has room above the letters)
+        local cap_top = math.max(0, title:getBaseline() - math.floor(UI.face("bold", 20).size * 0.70 + 0.5))
+        add(HorizontalGroup:new{ align = "top",
+            VerticalGroup:new{ align = "left", UI.vspace(cap_top), cover }, UI.hspace(s(16)), info })
+        gap(s(12))
 
         -- description
         local desc = Data.description(rec)
@@ -216,7 +231,7 @@ function Reading:build(squeeze)
                 height_overflow_show_ellipsis = true, fgcolor = UI.BLACK,
             }
             add(UI.tappable(box, function() plugin:showDescription(rec, desc) end))
-            add(UI.vspace(s(12)))
+            gap(s(12))
         end
 
         -- the chase
@@ -237,7 +252,7 @@ function Reading:build(squeeze)
                 Data.ago(rec.readest.updated_at) or "synced")
             or string.format("%s: not racing", plugin:petName("dog"))
         add(UI.spread(cw, UI.text(cat_label, "body", 10, UI.INK2), UI.text(dog_label, "body", 10, UI.INK2)))
-        add(UI.vspace(s(14)))
+        gap(s(14))
     end
 
     -- stats
@@ -252,7 +267,7 @@ function Reading:build(squeeze)
     })
     add(UI.vspace(s(8)))
     add(UI.rule(cw, s(2)))
-    add(UI.vspace(s(10)))
+    gap(s(10))
 
     -- arrivals and waiting, one line into the library
     local n_new = #(d.just_in or {})
@@ -276,6 +291,16 @@ function Reading:build(squeeze)
 
     local used = main:getSize().h + foot:getSize().h + 2 * m
     if used > H and squeeze < 3 then return self:build(squeeze + 1) end
+    -- share the spare room: up to s(20) more per gap, the rest stays above
+    -- the footer (the gap after the arrivals line is the last one)
+    local last = UI.vspace(0)
+    gaps[#gaps + 1] = last
+    main[#main + 1] = last
+    local spare = math.max(0, H - used)
+    local each = math.min(s(20), math.floor(spare / #gaps))
+    for _, sp in ipairs(gaps) do sp.width = sp.width + each end
+    used = used + each * #gaps
+    main:resetLayout()
     return FrameContainer:new{
         background = UI.WHITE, bordersize = 0, margin = 0, padding = m,
         VerticalGroup:new{ align = "left", main, UI.vspace(math.max(0, H - used)), foot },

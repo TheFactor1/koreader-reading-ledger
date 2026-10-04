@@ -185,19 +185,44 @@ function UI.tappable(widget, callback, hold_callback)
     return Tappable:new{ widget, callback = callback, hold_callback = hold_callback }
 end
 
--- A pixel-font button: solid (main action) or outlined.
-function UI.button(label, callback, outlined, size)
+-- A pixel-font button: solid (main action) or outlined. With width, the
+-- button is exactly that wide and the label centred, so stacked buttons
+-- share both edges.
+function UI.button(label, callback, outlined, size, width)
+    local b = Screen:scaleBySize(2)
     local pad_h, pad_v = Screen:scaleBySize(10), Screen:scaleBySize(6)
+    local text = UI.text(label:upper(), "pix", size or 11, outlined and UI.BLACK or UI.WHITE)
+    local inner = text
+    if width then
+        local CenterContainer = require("ui/widget/container/centercontainer")
+        inner = CenterContainer:new{ dimen = Geom:new{ w = math.max(text:getSize().w, width - 2 * b - 2 * pad_h),
+            h = text:getSize().h }, text }
+    end
     local frame = FrameContainer:new{
-        bordersize = Screen:scaleBySize(2),
+        bordersize = b,
         color = UI.BLACK,
         background = outlined and UI.WHITE or UI.BLACK,
         padding = 0, padding_left = pad_h, padding_right = pad_h,
         padding_top = pad_v, padding_bottom = pad_v,
         margin = 0,
-        UI.text(label:upper(), "pix", size or 11, outlined and UI.BLACK or UI.WHITE),
+        inner,
     }
     return UI.tappable(frame, callback)
+end
+
+-- How wide a button with this label would be (to give a stack one width).
+function UI.buttonWidth(label, size)
+    return UI.text(label:upper(), "pix", size or 11):getSize().w + 2 * Screen:scaleBySize(10) + 2 * Screen:scaleBySize(2)
+end
+
+-- The line at the top of every page: its name on the left, something on the
+-- right, always the same height and the same gap under it, so the three
+-- pages start at the same place.
+function UI.header(width, left, right)
+    local h = UI.text("A", "pix", 13):getSize().h
+    local line = UI.spread(width, UI.text(left, "pix", 11), right)
+    table.insert(line, 1, VerticalSpan:new{ width = h })
+    return VerticalGroup:new{ align = "left", line, VerticalSpan:new{ width = Screen:scaleBySize(12) } }
 end
 
 -- ---------------------------------------------------------------- tab bar
@@ -216,10 +241,11 @@ function UI.tabBar(width, active, on_select)
     for i, tab in ipairs(UI.TABS) do
         if i > 1 then row[#row + 1] = HorizontalSpan:new{ width = gap } end
         local on = tab.id == active
+        local w = i < n and tab_w or width - (n - 1) * (tab_w + gap)
         local frame = FrameContainer:new{
             bordersize = b, color = UI.BLACK, background = on and UI.BLACK or UI.WHITE,
             padding = 0, margin = 0,
-            CenterContainer:new{ dimen = Geom:new{ w = tab_w - 2 * b, h = h - 2 * b },
+            CenterContainer:new{ dimen = Geom:new{ w = w - 2 * b, h = h - 2 * b },
                 UI.text(tab.label:upper(), "pix", 11, on and UI.WHITE or UI.BLACK) },
         }
         row[#row + 1] = UI.tappable(frame, function() if not on then on_select(tab.id) end end)
@@ -567,7 +593,20 @@ function UI.cover(rec, w, h)
     -- placeholder's size comes from a CenterContainer of exactly w x h)
     local CenterContainer = require("ui/widget/container/centercontainer")
     local b = Screen:scaleBySize(2)
-    local title = UI.para(rec.title or "?", "bold", 12, w - Screen:scaleBySize(20))
+    -- the title in the biggest size (up to 12) where no word has to break
+    local inner_w = w - Screen:scaleBySize(20)
+    local size = 12
+    while size > 7 do
+        local widest = 0
+        for word in (rec.title or "?"):gmatch("%S+") do
+            local t = UI.text(word, "bold", size)
+            widest = math.max(widest, t:getSize().w)
+            t:free()
+        end
+        if widest <= inner_w then break end
+        size = size - 1
+    end
+    local title = UI.para(rec.title or "?", "bold", size, inner_w)
     return FrameContainer:new{
         bordersize = b, color = UI.BLACK, background = UI.WHITE, padding = 0, margin = 0,
         CenterContainer:new{ dimen = Geom:new{ w = w - 2 * b, h = h - 2 * b }, title },
