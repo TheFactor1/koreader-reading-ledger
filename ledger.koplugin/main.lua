@@ -166,7 +166,7 @@ function Ledger:showBook(rec)
     end
 end
 
--- The whole description, from the Reading page.
+-- The whole description, from the Currently reading page.
 function Ledger:showDescription(rec, text)
     local TextViewer = require("ui/widget/textviewer")
     UIManager:show(TextViewer:new{ title = rec.title, text = text })

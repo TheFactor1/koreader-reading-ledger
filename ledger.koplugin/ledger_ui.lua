@@ -226,9 +226,21 @@ function UI.header(width, left, right)
 end
 
 -- ---------------------------------------------------------------- tab bar
--- The three pages: Reading, Library, Settings. Equal-width tabs across the
+-- The three pages: Library, Currently reading (the main one, in the middle), Settings. Equal-width tabs across the
 -- bottom; the current one is solid black.
-UI.TABS = { { id = "reading", label = "Reading" }, { id = "library", label = "Library" }, { id = "settings", label = "Settings" } }
+UI.TABS = { { id = "library", label = "Library" }, { id = "reading", label = "Currently reading" }, { id = "settings", label = "Settings" } }
+
+-- a tab's label, a size smaller if it doesn't fit (small screens)
+local function tabLabel(label, max_w, on)
+    local size = 11
+    local t = UI.text(label:upper(), "pix", size, on and UI.WHITE or UI.BLACK)
+    while t:getSize().w > max_w and size > 7 do
+        t:free()
+        size = size - 1
+        t = UI.text(label:upper(), "pix", size, on and UI.WHITE or UI.BLACK)
+    end
+    return t
+end
 
 function UI.tabBar(width, active, on_select)
     local CenterContainer = require("ui/widget/container/centercontainer")
@@ -246,7 +258,7 @@ function UI.tabBar(width, active, on_select)
             bordersize = b, color = UI.BLACK, background = on and UI.BLACK or UI.WHITE,
             padding = 0, margin = 0,
             CenterContainer:new{ dimen = Geom:new{ w = w - 2 * b, h = h - 2 * b },
-                UI.text(tab.label:upper(), "pix", 11, on and UI.WHITE or UI.BLACK) },
+                tabLabel(tab.label, w - 2 * b - Screen:scaleBySize(8), on) },
         }
         row[#row + 1] = UI.tappable(frame, function() if not on then on_select(tab.id) end end)
     end

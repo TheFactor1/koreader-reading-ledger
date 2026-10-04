@@ -16,7 +16,7 @@ what's trending on Open Library.
 
 Three pages, switched by a tab bar at the bottom (2026-10-04):
 
-- **Reading** (the main page): the book you're on -- big cover, title, series,
+- **Currently reading** (the main page, the middle tab): the book you're on -- big cover, title, series,
   pages and time left (from your own pace in KOReader's statistics), the
   description (tap for all of it), and the **chase**: the cat runs for this
   device and the dog for Readest along a field to a chequered flag where a fish

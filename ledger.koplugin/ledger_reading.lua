@@ -1,7 +1,7 @@
 --[[
-The Reading page: the Ledger's main page, all about the book you're on.
+The Currently reading page: the Ledger's main page, all about the book you're on.
 
-  NOW READING                                        < 1/2 >
+  CURRENTLY READING                                  < 1/2 >
   [cover]  Golden Son
            Pierce Brown
            Red Rising Saga, book 2
@@ -13,7 +13,7 @@ The Reading page: the Ledger's main page, all about the book you're on.
   TODAY 23 | THIS WEEK 140 | STREAK 4 DAYS
   Pip fetched 2 new · waiting for 1 ›
   fish goal
-  [READING] [LIBRARY] [SETTINGS]
+  [LIBRARY] [CURRENTLY READING] [SETTINGS]
 
 Several books on the go: swipe, or tap < >, to switch between them.
 --]]
@@ -169,7 +169,7 @@ function Reading:build(squeeze)
     else
         right = UI.text(os.date("%a %d %b"):upper(), "pix", 11)
     end
-    add(UI.header(cw, "NOW READING", right))
+    add(UI.header(cw, "CURRENTLY READING", right))
 
     -- the gaps between sections; whatever room is left over on the page is
     -- shared out between them, so nothing bunches up at the top

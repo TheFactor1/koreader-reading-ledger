@@ -1,5 +1,5 @@
 --[[
-The chase: the Reading page's race scene.
+The chase: the Currently reading page's race scene.
 
 A field with distance marks and a chequered flag at the finish, where a fish
 waits as the prize. The cat runs for this device, the dog for Readest. When
