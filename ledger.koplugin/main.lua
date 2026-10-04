@@ -41,6 +41,11 @@ local REFRESH_EVERY = 30 * 60   -- remote data older than this is refreshed on s
 -- once it's open (the reader's own plugin instance does the jump).
 local pending_readest_jump = nil
 
+-- One settings object for every Ledger instance: the file browser and an
+-- open book each load the plugin, and two copies of ledger.lua in memory
+-- would overwrite each other's races, tuning and choices on flush.
+local shared_settings = nil
+
 local Ledger = WidgetContainer:extend{
     name = "ledger",
     is_doc_only = false,
@@ -48,7 +53,8 @@ local Ledger = WidgetContainer:extend{
 
 function Ledger:init()
     UI.setPluginDir(self.path)
-    self.settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/ledger.lua")
+    shared_settings = shared_settings or LuaSettings:open(DataStorage:getSettingsDir() .. "/ledger.lua")
+    self.settings = shared_settings
     Dispatcher:registerAction("ledger_show", {
         category = "none", event = "ShowLedger", title = _("Reading Ledger"), general = true,
     })
@@ -469,7 +475,7 @@ end
 
 function Ledger:showRequest(r)
     UIManager:show(InfoMessage:new{
-        text = (r.title or "?") .. "\n\n" .. _("Requested. Biscuit is watching for it; it lands under Pip fetched when it arrives."),
+        text = (r.title or "?") .. "\n\n" .. _("Requested. It shows up under new books when it arrives."),
         timeout = 4,
     })
 end

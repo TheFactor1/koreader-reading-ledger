@@ -163,8 +163,9 @@ function Race.settle(store, m, rival, now)
     now = now or os.time()
     local f = form(store)
     local today = dateOf(now)
-    -- first run: learn from here on
-    if not f.settled then f.settled = dateOf(now - 86400) end
+    -- first run: learn from here on; after a long break, only the last two
+    -- weeks count (the statistics only go back eight anyway)
+    if not f.settled or f.settled < dateOf(now - 15 * 86400) then f.settled = dateOf(now - 86400) end
     local a = Race.animal(rival)
     local d = nextDate(f.settled)
     local changed = not store:readSetting("rival_form")
@@ -254,7 +255,9 @@ function Race.state(rec, stats, store, you, rival, m, now, peek)
         -- a new race: from the first page of this book in the statistics
         -- (the rival starts where you were then), or from here, level with you
         r = {}
-        if stats.book_start then
+        -- a book the statistics first saw more than a week ago (you started
+        -- it before the Ledger, or are coming back to it) races from here
+        if stats.book_start and now - stats.book_start <= 7 * 86400 then
             r.start = stats.book_start
             r.rival = math.floor((stats.book_start_pct or 0) * total + 0.5)
         else
@@ -289,6 +292,7 @@ function Race.state(rec, stats, store, you, rival, m, now, peek)
         math.floor(r.rival + today_target * mult * math.max(0, m.share(now) - from) + 0.5))
     return {
         total = total,
+        pages_known = rec.pages and rec.pages > 0 or false,
         you_pages = you_pages, you_pct = you_pct,
         rival_pages = rival_pages, rival_pct = rival_pages / total,
         rate = math.floor(m.overall * a.mult * factor * (a.nap and 2 / 3 or 1) + 0.5),
@@ -303,22 +307,37 @@ function Race.state(rec, stats, store, you, rival, m, now, peek)
 end
 
 -- ---------------------------------------------------------------- words
+-- "22 pages", or "5%" when the book's length isn't known.
+local function gapText(pages, race)
+    if race.pages_known then return string.format("%d %s", pages, pages == 1 and "page" or "pages") end
+    return string.format("%d%%", math.max(1, math.floor(pages / race.total * 100 + 0.5)))
+end
+
 -- What the runners say when you tap them, the labels under the track and
 -- the line about today. p: the plugin; race: Race.state().
 function Race.lines(p, rec, race, cache)
     local you, rival = p:petName(p:runner()), p:petName(p:rival())
     local t = {}
-    t.you_says = string.format("%s: I'm on page %d of %d.", you, math.max(1, race.you_pages), race.total)
+    -- pages when the book's length is known, else percent
+    local function at(pages, pct)
+        if race.pages_known then return string.format("p. %d", pages) end
+        return string.format("%d%%", math.floor(pct * 100 + 0.5))
+    end
+    if race.pages_known then
+        t.you_says = string.format("%s: I'm on page %d of %d.", you, math.max(1, race.you_pages), race.total)
+    else
+        t.you_says = string.format("%s: I'm %d%% of the way.", you, math.floor(race.you_pct * 100 + 0.5))
+    end
     if require("ledger_data").readestAhead(rec) then t.you_says = t.you_says .. " Readest got me here." end
     if race.rival_done then
         t.rival_says = string.format("%s: Finished! Your turn.", rival)
     elseif race.napping then
         t.rival_says = string.format("%s: Zzz... napping today. Sneak past me!", rival)
     elseif race.ahead > 0 then
-        t.rival_says = string.format("%s: I'm %d pages ahead -- catch me!", rival, race.ahead)
+        t.rival_says = string.format("%s: I'm %s ahead -- catch me!", rival, gapText(race.ahead, race))
         if race.mood == "easing off" then t.rival_says = t.rival_says .. " (I'll take it easy for a bit.)" end
     elseif race.ahead < 0 then
-        t.rival_says = string.format("%s: You're %d pages ahead of me.", rival, -race.ahead)
+        t.rival_says = string.format("%s: You're %s ahead of me.", rival, gapText(-race.ahead, race))
         if race.mood == "pushing" then t.rival_says = t.rival_says .. " Not for long!" end
     else
         t.rival_says = string.format("%s: Neck and neck!", rival)
@@ -329,9 +348,9 @@ function Race.lines(p, rec, race, cache)
     else
         t.fish_says = "A fish for every book you finish."
     end
-    t.you_label = string.format("%s (you) · p. %d", you, race.you_pages)
+    t.you_label = string.format("%s (you) · %s", you, at(race.you_pages, race.you_pct))
     t.rival_label = race.rival_done and string.format("%s · finished", rival)
-        or string.format("%s · p. %d", rival, race.rival_pages)
+        or string.format("%s · %s", rival, at(race.rival_pages, race.rival_pct))
     if race.napping then
         t.today = string.format("%s naps today: every page puts you further ahead.", rival)
     elseif race.today >= race.today_target then

@@ -220,7 +220,8 @@ end
 -- pages start at the same place.
 function UI.header(width, left, right)
     local h = UI.text("A", "pix", 13):getSize().h
-    local line = UI.spread(width, UI.text(left, "pix", 11), right)
+    if type(left) == "string" then left = UI.text(left, "pix", 11) end
+    local line = UI.spread(width, left, right)
     table.insert(line, 1, VerticalSpan:new{ width = h })
     return VerticalGroup:new{ align = "left", line, VerticalSpan:new{ width = Screen:scaleBySize(12) } }
 end

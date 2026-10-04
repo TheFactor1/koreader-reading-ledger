@@ -307,6 +307,24 @@ function Data.collect(ui, opts)
     if opts.download_dir and opts.download_dir ~= home then dirs[#dirs + 1] = opts.download_dir end
     local just_in = Data.justIn(dirs, 21, 6)
 
+    -- No history (cleared, or books opened some other way): books in
+    -- progress from the library instead, most recently read first (by when
+    -- their sidecar was last written).
+    if not lead then
+        local in_progress = {}
+        for _, rec in ipairs(Data.library(dirs, readest, matches)) do
+            if Data.status(rec) == "reading" and rec.status ~= "abandoned" then
+                local found = DocSettings.findSidecarFile and DocSettings:findSidecarFile(rec.file)
+                rec.last_open = found and lfs.attributes(found, "modification") or rec.added
+                in_progress[#in_progress + 1] = rec
+            end
+        end
+        table.sort(in_progress, function(a, b) return (a.last_open or 0) > (b.last_open or 0) end)
+        for _, rec in ipairs(in_progress) do
+            if not lead then lead = rec else reading[#reading + 1] = rec end
+        end
+    end
+
     return {
         lead = lead,
         reading = reading,

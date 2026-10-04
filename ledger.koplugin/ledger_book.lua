@@ -70,16 +70,15 @@ function Book:build()
     local main = VerticalGroup:new{ align = "left" }
     local function add(w) main[#main + 1] = w end
 
-    add(UI.spread(cw,
-        UI.tappable(UI.text("< BACK", "pix", 11), function() self:onClose() end),
+    add(UI.header(cw, UI.tappable(UI.text("< BACK", "pix", 11), function() self:onClose() end),
         UI.text("BOOK", "pix", 11)))
-    add(UI.vspace(s(10)))
 
     -- cover and details
     local cover_w = math.floor(cw * 0.32)
     local cover = UI.cover(rec, cover_w, math.floor(cover_w * 1.5))
     local info_w = cw - cover_w - s(14)
-    local info = VerticalGroup:new{ align = "left", UI.para(rec.title or "?", "bold", 18, info_w) }
+    local title = UI.para(rec.title or "?", "bold", 18, info_w)
+    local info = VerticalGroup:new{ align = "left", title }
     if rec.author then info[#info + 1] = UI.text(rec.author, "body", 12, UI.INK2, info_w) end
     info[#info + 1] = UI.vspace(s(6))
     local series = hc.series or rec.series
@@ -95,7 +94,11 @@ function Book:build()
         info[#info + 1] = UI.vspace(s(6))
         info[#info + 1] = UI.text("Your shelf: " .. (HC_STATUS[hc.status_id] or "?"), "body", 11, UI.BLACK, info_w)
     end
-    add(HorizontalGroup:new{ align = "top", cover, UI.hspace(s(14)), info })
+    -- the cover's top edge meets the top of the title's capitals, as on
+    -- the Currently reading page
+    local cap_top = math.max(0, title:getBaseline() - math.floor(UI.face("bold", 18).size * 0.70 + 0.5))
+    add(HorizontalGroup:new{ align = "top",
+        VerticalGroup:new{ align = "left", UI.vspace(cap_top), cover }, UI.hspace(s(14)), info })
     add(UI.vspace(s(14)))
 
     -- the race (a book not opened yet only shows the start line)

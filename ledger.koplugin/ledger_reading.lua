@@ -142,8 +142,19 @@ function Reading:build(squeeze)
 
     self.chase = nil
     if not rec then
-        add(UI.para(string.format("Nothing on the go. %s is waiting for a book -- pick one from the Library.",
-            plugin:petName("cat")), "body", 14, cw))
+        -- nothing in progress: your runner waits at the start line
+        local CenterContainer = require("ui/widget/container/centercontainer")
+        local a = Race.animal(plugin:runner())
+        local pet = UI.sprite(a.still, UI.spriteScaleH(a.still, math.floor(H * 0.08)))
+        add(UI.vspace(s(30)))
+        add(CenterContainer:new{ dimen = Geom:new{ w = cw, h = pet:getSize().h }, pet })
+        add(UI.vspace(s(16)))
+        local msg = UI.para(string.format("Nothing on the go. %s is waiting at the start line for a book.",
+            plugin:petName(a.id)), "body", 14, cw)
+        add(msg)
+        add(UI.vspace(s(16)))
+        add(UI.button("Open the library", function() plugin:showTab("library") end))
+        gap(s(30))
     else
         -- cover and details
         local cover_w = math.floor(cw * (0.36 - 0.05 * squeeze))
@@ -159,9 +170,11 @@ function Reading:build(squeeze)
         end
         local facts = {}
         if rec.pages then facts[#facts + 1] = rec.pages .. " pages" end
-        local stats = self.stats_for == rec.hash and self.stats or Data.readingStats(rec.hash)
-        self.stats, self.stats_for = stats, rec.hash
-        local left = Data.timeLeft(stats.pace or stats.all_pace, rec.pages, rec.pct)
+        -- (keyed by file: a book without a checksum has no hash)
+        local stats = self.stats_for == rec.file and self.stats or Data.readingStats(rec.hash)
+        self.stats, self.stats_for = stats, rec.file
+        local left = Data.timeLeft(stats.pace or stats.all_pace, rec.pages,
+            math.max(rec.pct or 0, rec.readest and rec.readest.pct or 0))
         if left then facts[#facts + 1] = left end
         if #facts > 0 then info[#info + 1] = UI.para(table.concat(facts, " · "), "body", 11, info_w, UI.INK2) end
         info[#info + 1] = UI.vspace(s(12))
@@ -187,11 +200,11 @@ function Reading:build(squeeze)
 
         -- description
         local desc = Data.description(rec)
-        local lines = math.max(0, 4 - squeeze)
-        if desc and lines > 0 then
+        local desc_lines = math.max(0, 4 - squeeze)
+        if desc and desc_lines > 0 then
             local box = TextBoxWidget:new{
                 text = desc, face = UI.face("body", 12), width = cw,
-                height = math.floor(UI.face("body", 12).size * 1.45 * lines),
+                height = math.floor(UI.face("body", 12).size * 1.45 * desc_lines),
                 height_overflow_show_ellipsis = true, fgcolor = UI.BLACK,
             }
             add(UI.tappable(box, function() plugin:showDescription(rec, desc) end))
@@ -244,7 +257,8 @@ function Reading:build(squeeze)
     if hc and hc.goal and hc.goal.goal then
         local fish = UI.fishRow(math.min(hc.goal.goal, 24), hc.goal.progress or 0, cw / 22)
         foot[#foot + 1] = UI.spread(cw, fish,
-            UI.text(string.format("%d/%d in %s", hc.goal.progress or 0, hc.goal.goal, os.date("%Y")), "pix", 10))
+            UI.text(string.format("%d/%d in %s", hc.goal.progress or 0, hc.goal.goal,
+                (hc.goal.end_date or ""):match("^(%d%d%d%d)") or os.date("%Y")), "pix", 10))
     else
         foot[#foot + 1] = UI.tappable(UI.text("Add your Hardcover key in Settings for your yearly goal ›", "body", 11, UI.INK2, cw),
             function() plugin:showTab("settings") end)
