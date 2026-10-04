@@ -380,7 +380,12 @@ function UI.cover(rec, w, h)
             local img = ImageWidget:new{ image = info.cover_bb, image_disposable = true,
                 width = w - 2 * Screen:scaleBySize(2), height = h - 2 * Screen:scaleBySize(2),
                 stretch_limit_percentage = 10 }
-            return FrameContainer:new{ bordersize = Screen:scaleBySize(2), padding = 0, margin = 0, img }, true
+            -- the frame is always exactly w x h, even when an oddly shaped
+            -- cover is letterboxed inside it, so everything under it lines up
+            local CenterContainer = require("ui/widget/container/centercontainer")
+            local b = Screen:scaleBySize(2)
+            return FrameContainer:new{ bordersize = b, padding = 0, margin = 0, background = UI.WHITE,
+                CenterContainer:new{ dimen = Geom:new{ w = w - 2 * b, h = h - 2 * b }, img } }, true
         end
     end
     -- (FrameContainer's width/height don't take part in layout, so the

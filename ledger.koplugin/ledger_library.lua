@@ -145,21 +145,14 @@ function Library:tile(rec, w, h, text_w)
         vg[#vg + 1] = UI.vspace(s(4))
     end
     vg[#vg + 1] = UI.vspace(s(4))
-    vg[#vg + 1] = UI.text(rec.title or "?", "bold", 10, UI.BLACK, text_w)
-
-    local note
-    local icon_h = s(11)
-    if st == "reading" then
-        note = UI.text(string.format("%d%%", math.floor((rec.pct or 0) * 100 + 0.5)), "body", 9, UI.INK2)
-    elseif st == "new" then
-        note = HorizontalGroup:new{ align = "center",
-            UI.sprite("dog_sit", UI.spriteScaleH("dog_sit", icon_h)), UI.hspace(s(3)), UI.text("new", "body", 9, UI.INK2) }
-    elseif st == "finished" then
-        note = HorizontalGroup:new{ align = "center",
-            UI.sprite("fish", UI.spriteScaleH("fish", math.floor(icon_h * 0.7))), UI.hspace(s(3)), UI.text("done", "body", 9, UI.INK2) }
-    end
-    local note_w = note and note:getSize().w + s(6) or 0
-    -- the note lines up with the cover's right edge, not the column's
+    -- everything under the cover lines up with the cover: title and author
+    -- from its left edge, the note ending exactly at its right edge, all
+    -- notes the same plain grey text
+    vg[#vg + 1] = UI.text(rec.title or "?", "bold", 10, UI.BLACK, w)
+    local note_text = (st == "reading" and string.format("%d%%", math.floor((rec.pct or 0) * 100 + 0.5)))
+        or (st == "new" and "new") or (st == "finished" and "done") or nil
+    local note = note_text and UI.text(note_text, "body", 9, UI.INK2)
+    local note_w = note and note:getSize().w + s(8) or 0
     local author = UI.text(rec.author or "", "body", 9, UI.INK2, math.max(s(20), w - note_w))
     vg[#vg + 1] = note and UI.spread(w, author, note) or author
     -- every tile takes its column's full width, so the grid stays aligned
