@@ -199,7 +199,7 @@ function Reading:build(squeeze)
         end
 
         -- the race
-        local race = Race.state(rec, stats, plugin.settings, plugin:runner(), plugin:rival())
+        local race = Race.state(rec, stats, plugin.settings, plugin:runner(), plugin:rival(), plugin:raceModel())
         local lines = Race.lines(plugin, rec, race, self.cache)
         local chase = Chase:new{
             width = cw, height = math.floor(H * (0.19 - 0.02 * squeeze)),

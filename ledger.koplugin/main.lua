@@ -95,6 +95,7 @@ end
 -- top of whichever is showing.
 function Ledger:show()
     self.cache = Data.loadCache()
+    self.race_model = nil   -- relearn your habits each time the Ledger opens
     self:showTab("reading")
     self:refreshRemote(false)
 end
@@ -214,6 +215,25 @@ function Ledger:openFiles()
 end
 
 -- ---------------------------------------------------------------- settings
+-- What the rival knows about your reading (ledger_race.lua), learned from
+-- KOReader's statistics once per showing; finished days are settled (and
+-- the rival tuned) on the way.
+function Ledger:raceModel()
+    if not self.race_model then
+        self.race_model = Race.model(Data.readingHabits())
+        Race.settle(self.settings, self.race_model, self:rival())
+    end
+    return self.race_model
+end
+
+function Ledger:showHabits()
+    local TextViewer = require("ui/widget/textviewer")
+    UIManager:show(TextViewer:new{
+        title = string.format(_("What %s has learned"), self:petName(self:rival())),
+        text = Race.summary(self, self:raceModel()),
+    })
+end
+
 -- Your runner and your rival (animal ids from ledger_race.lua); never the same.
 function Ledger:runner()
     return Race.animal(self.settings:readSetting("runner") or "cat").id

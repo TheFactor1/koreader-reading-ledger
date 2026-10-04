@@ -124,8 +124,8 @@ function Chase:paintTo(bb, x, y)
         if running then return a.run[self.frame % #a.run + 1] end
         return a.still
     end
-    local napping = self.napping and rival_a.nap
-    place(napping and not running and rival_a.nap or pose(rival_a), self.rival_pct or 0, rival_lane, "rival")
+    local napping = self.napping and rival_a.nap_sprite
+    place(napping and not running and rival_a.nap_sprite or pose(rival_a), self.rival_pct or 0, rival_lane, "rival")
     if napping and not running then
         local z = UI.text("z Z", "pix", 9)
         local r = self.rects.rival

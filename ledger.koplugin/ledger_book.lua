@@ -100,7 +100,7 @@ function Book:build()
 
     -- the race (a book not opened yet only shows the start line)
     local stats = Data.readingStats(rec.hash)
-    local race = Race.state(rec, stats, plugin.settings, plugin:runner(), plugin:rival(), nil, not rec.opened)
+    local race = Race.state(rec, stats, plugin.settings, plugin:runner(), plugin:rival(), plugin:raceModel(), nil, not rec.opened)
     local lines = Race.lines(plugin, rec, race, plugin.cache)
     local chase = Chase:new{
         width = cw, height = math.floor(H * 0.16),

@@ -1,20 +1,36 @@
 # The Reading Ledger
 
 A front page for KOReader with pixel pets, where every book is a race. Pick
-your runner -- cat, dog, rabbit or tortoise -- and a rival. The rival starts
-the book when you do and reads a set number of pages a day, based on how much
-you usually read (KOReader's statistics):
+your runner -- cat, dog, rabbit or tortoise -- and a rival. The rival learns
+your reading habits from KOReader's statistics (the last 8 weeks) and races
+you on them:
 
-| Rival | Reads |
-|---|---|
-| Tortoise | what you usually read |
-| Cat | about 15% more |
-| Dog | about 30% more |
-| Rabbit | twice as much, but naps every third day |
+- **How much it reads:** what you usually read on that day of the week,
+  nudged by whether you've been reading more or less lately.
+- **When it reads:** at the hours you usually read, so it doesn't run off in
+  the morning if you only read at night.
+- **How hard it is:** every day it checks whether you read more than it did
+  over the week before, and tunes itself so you're ahead about as often as
+  its animal says:
 
-Pass it before the chequered flag (the last page) to win the book, and
+  | Rival | You're ahead |
+  |---|---|
+  | Tortoise | most of the time (easy) |
+  | Cat | about 2 weeks in 3 (fair) |
+  | Dog | about half the time (hard) |
+  | Rabbit | about half, but streaky: fast, and naps every third day |
+
+- **Keeping it close:** in a book, a rival a few days ahead of you eases off
+  and one far behind pushes, so it stays a race -- but either of you can win.
+
+Settings shows what the rival has learned (your typical day, best weekday,
+usual hours, how often you've been ahead). With no statistics yet it assumes
+about 20 pages a day until it has a few days to go on.
+
+Pass the rival before the chequered flag (the last page) to win the book;
 out-read its share each day to win the day. Your place is the furthest of
-this device and Readest, so pages read on your phone count. When Readest is
+this device and Readest, so pages read on your phone count, and a dead heat
+goes to you. When Readest is
 further on, two buttons say exactly where each opens: **Continue from p. 203**
 (where you got to in Readest) or **Stay on p. 181** (where this device is).
 
@@ -38,7 +54,8 @@ Three pages, switched by a tab bar at the bottom (2026-10-04):
   Several books on the go: swipe or tap < > to switch.
 - **Library**: every book on the device as a paged grid of covers, filters and
   sort, Files for KOReader's own browser. (Status bars are still being chosen.)
-- **Settings**: your runner and your rival (and their names), Hardcover key, Readest and Bookbridge status,
+- **Settings**: your runner and your rival (and their names), what the rival
+  has learned about your reading, Hardcover key, Readest and Bookbridge status,
   animations on/off, refresh, about and credits.
 
 Still to come: progress bars in the library, onboarding, replacing Bookshelf

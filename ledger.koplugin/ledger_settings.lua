@@ -83,6 +83,8 @@ function Settings:build()
         (you.label .. " · " .. p:petName(you.id)):upper(), function() p:chooseAnimal("runner") end))
     add(row(cw, rival.still, "Your rival", rival.hint,
         (rival.label .. " · " .. p:petName(rival.id)):upper(), function() p:chooseAnimal("rival") end))
+    add(row(cw, nil, string.format("What %s has learned", p:petName(rival.id)), "Your reading habits, and how it's tuned",
+        "›", function() p:showHabits() end))
     add(row(cw, "fish", "Hardcover", st.hardcover_hint, st.hardcover, function() p:editHardcoverKey() end))
     add(row(cw, nil, "Readest", "Your place there counts too", st.readest))
     add(row(cw, nil, "Bookbridge", "Requests, new arrivals, search", st.bookbridge))

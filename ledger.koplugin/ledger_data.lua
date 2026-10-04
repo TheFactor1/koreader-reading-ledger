@@ -338,6 +338,53 @@ function Data.pagesToday()
     return n
 end
 
+-- Your reading habits over the last `weeks` weeks (default 8), from
+-- KOReader's statistics:
+--   days     { ["2026-10-04"] = pages, ... } for every day you read
+--   hours    [0..23] share of your page turns in each hour (sums to 1)
+--   first    the first day the statistics saw (as "YYYY-MM-DD"), or nil
+-- nil when there are no statistics at all.
+function Data.readingHabits(weeks, now)
+    weeks = weeks or 8
+    now = now or os.time()
+    local db_path = DataStorage:getSettingsDir() .. "/statistics.sqlite3"
+    if lfs.attributes(db_path, "mode") ~= "file" then return nil end
+    local ok, SQ3 = pcall(require, "lua-ljsqlite3/init")
+    if not ok then return nil end
+    local dok, db = pcall(SQ3.open, db_path, "ro")
+    if not dok or not db then return nil end
+    local since = now - weeks * 7 * 86400
+    local out = { days = {}, hours = {} }
+    local turns = 0
+    local function rows(sql, fn)
+        pcall(function()
+            local stmt = db:prepare(sql)
+            stmt:reset():bind(since)
+            while true do
+                local row = stmt:step()
+                if not row then break end
+                fn(row)
+            end
+            stmt:close()
+        end)
+    end
+    rows("SELECT date(start_time, 'unixepoch', 'localtime'), count(DISTINCT id_book || ':' || page) FROM page_stat_data WHERE start_time >= ? GROUP BY 1",
+        function(row) out.days[tostring(row[1])] = tonumber(row[2]) or 0 end)
+    local by_hour = {}
+    rows("SELECT CAST(strftime('%H', start_time, 'unixepoch', 'localtime') AS INTEGER), count(*) FROM page_stat_data WHERE start_time >= ? GROUP BY 1",
+        function(row)
+            local h, n = tonumber(row[1]), tonumber(row[2]) or 0
+            if h then by_hour[h] = n; turns = turns + n end
+        end)
+    db:close()
+    if turns == 0 then return nil end
+    for h = 0, 23 do out.hours[h] = (by_hour[h] or 0) / turns end
+    for d in pairs(out.days) do
+        if not out.first or d < out.first then out.first = d end
+    end
+    return out
+end
+
 -- Reading statistics from KOReader's statistics database:
 --   pace       seconds per page for this book (nil if not read with stats on)
 --   today      pages turned today, all books
