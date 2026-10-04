@@ -204,14 +204,21 @@ function Data.status(rec)
     return "unread"
 end
 
--- Readest's synced position for every book it knows: hash -> {pct, updated_at, status}.
+-- Readest's synced position for every book it knows: hash -> {pct, total
+-- (in Readest's own pages), updated_at (ms), status}.
 function Data.readestPositions(ui)
     local settings = G_reader_settings:readSetting("readest_sync")
     if type(settings) ~= "table" or not settings.user_id or not settings.access_token then
         return nil -- not installed or not signed in
     end
     local rows
-    local store = ui and ui.readest and ui.readest.getLibraryStore and ui.readest:getLibraryStore()
+    -- Readest's own library store when it's loaded (it can fail, e.g. a
+    -- database mid-migration: then read the database directly)
+    local store
+    if ui and ui.readest and ui.readest.getLibraryStore then
+        local sok, st = pcall(ui.readest.getLibraryStore, ui.readest)
+        if sok then store = st else logger.warn("ledger: Readest library store:", st) end
+    end
     if store and store.listBooks then
         local ok, r = pcall(store.listBooks, store, {})
         if ok then rows = r end
@@ -247,6 +254,7 @@ function Data.readestPositions(ui)
         if r.hash then
             out[r.hash] = {
                 pct = (cur and total and total > 0) and math.min(1, cur / total) or nil,
+                total = total,
                 updated_at = tonumber(r.updated_at),
                 status = r.reading_status,
             }

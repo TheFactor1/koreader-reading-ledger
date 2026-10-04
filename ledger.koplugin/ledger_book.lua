@@ -129,7 +129,8 @@ function Book:build()
         btn(ahead, function() plugin:continueFromReadest(rec) end)
         btn(here, function() plugin:openBook(rec) end, true)
     else
-        btn(rec.opened and "Keep reading" or "Start reading", function() plugin:openBook(rec) end)
+        local label = not rec.opened and "Start reading" or Data.isFinished(rec) and "Read again" or "Keep reading"
+        btn(label, function() plugin:openBook(rec) end)
     end
     add(buttons)
 

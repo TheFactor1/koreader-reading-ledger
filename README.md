@@ -28,16 +28,24 @@ usual hours, how often you've been ahead). With no statistics yet it assumes
 about 20 pages a day until it has a few days to go on.
 
 Pass the rival before the chequered flag (the last page) to win the book;
-out-read its share each day to win the day. Your place is the furthest of
-this device and Readest, so pages read on your phone count, and a dead heat
-goes to you. When Readest is
+out-read its share each day to win the day. A dead heat goes to you.
+
+**Reading in Readest counts.** Your place in a book is the furthest of this
+device and Readest, and pages you read in Readest on your phone, tablet or
+computer count toward today, this week and what the rival learns. When the
+Ledger opens it asks the Readest plugin to pull its reading statistics and
+library positions in the background, and redraws when they land. Pages
+counted from a book moving on in Readest are taken off again if the same
+stretch arrives through the statistics sync, so nothing counts twice. When Readest is
 further on, two buttons say exactly where each opens: **Continue from p. 203**
 (where you got to in Readest) or **Stay on p. 181** (where this device is).
 
 The front page also shows what you read today, your other books on the go,
 new arrivals nobody has opened yet, books you requested through Bookbridge
-that haven't turned up, and either your Hardcover shelves and yearly goal
-(paid in fish) or, without a Hardcover key, what's trending on Open Library.
+that haven't turned up, and your Hardcover yearly goal (paid in fish). The
+Library has a **Trending** shelf: this week's most-read books on Open Library,
+marked when they're already on the device; tap one to open it, or to request
+it through Bookbridge.
 
 ## Status
 
@@ -53,7 +61,7 @@ Three pages, switched by a tab bar at the bottom (2026-10-04):
   and what's on order, the yearly goal in fish.
   Several books on the go: swipe or tap < > to switch.
 - **Library**: every book on the device as a paged grid of covers, filters and
-  sort, Files for KOReader's own browser. (Status bars are still being chosen.)
+  sort, the Trending shelf, Files for KOReader's own browser. (Status bars are still being chosen.)
 - **Settings**: your runner and your rival (and their names), what the rival
   has learned about your reading, Hardcover key, Readest and Bookbridge status,
   animations on/off, refresh, about and credits.
@@ -67,10 +75,10 @@ plugin signed in.
 | Source | What it adds |
 |---|---|
 | This device | Books in progress, new arrivals, pages read today (KOReader statistics) |
-| Readest plugin | Your position in Readest for every book (it counts toward your place in the race) |
+| Readest plugin | Your position in Readest for every book, and reading done there (statistics and positions) |
 | Bookbridge | Requests still on order, Hardcover matches, search and request |
 | Hardcover, your own key | Shelves, yearly goal, a book's rating and series |
-| Open Library | Trending books when there's no Hardcover key; no account, straight from the device |
+| Open Library | The Trending shelf; no account, straight from the device |
 
 No server of anyone's is involved for trending, and no shared Hardcover key is
 built in: a Hardcover key is a personal account token.

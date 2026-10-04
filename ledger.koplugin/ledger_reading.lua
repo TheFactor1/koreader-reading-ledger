@@ -211,8 +211,11 @@ function Reading:build(squeeze)
             gap(s(12))
         end
 
-        -- the race
-        local race = Race.state(rec, stats, plugin.settings, plugin:runner(), plugin:rival(), plugin:raceModel())
+        -- the race (today counts pages read in Readest too)
+        local rd_today = plugin:readestPages()
+        local rstats = setmetatable({ today = (stats.today or 0) + rd_today }, { __index = stats })
+        local race = Race.state(rec, rstats, plugin.settings, plugin:runner(), plugin:rival(), plugin:raceModel())
+        race.today_readest = rd_today
         local lines = Race.lines(plugin, rec, race, self.cache)
         local chase = Chase:new{
             width = cw, height = math.floor(H * (0.19 - 0.02 * squeeze)),
@@ -233,12 +236,13 @@ function Reading:build(squeeze)
 
     -- stats
     local st = self.stats or Data.readingStats(nil)
+    local rd_today, rd_week = plugin:readestPages()
     local bw = math.floor(cw / 3)
     add(UI.rule(cw, s(2)))
     add(UI.vspace(s(8)))
     add(HorizontalGroup:new{ align = "center",
-        statBlock("Today", tostring(st.today) .. " p", bw),
-        statBlock("This week", tostring(st.week) .. " p", bw),
+        statBlock("Today", tostring(st.today + rd_today) .. " p", bw),
+        statBlock("This week", tostring(st.week + rd_week) .. " p", bw),
         statBlock("Streak", st.streak .. (st.streak == 1 and " day" or " days"), bw),
     })
     add(UI.vspace(s(8)))

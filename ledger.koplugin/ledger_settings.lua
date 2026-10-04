@@ -86,11 +86,11 @@ function Settings:build()
     add(row(cw, nil, string.format("What %s has learned", p:petName(rival.id)), "Your reading habits, and how it's tuned",
         "›", function() p:showHabits() end))
     add(row(cw, "fish", "Hardcover", st.hardcover_hint, st.hardcover, function() p:editHardcoverKey() end))
-    add(row(cw, nil, "Readest", "Your place there counts too", st.readest))
+    add(row(cw, nil, "Readest", "Reading there counts in the race too", st.readest))
     add(row(cw, nil, "Bookbridge", "Requests, new arrivals, search", st.bookbridge))
     add(row(cw, nil, "Animations", "The runners sprint in when the page opens",
         p:animationsOn() and "ON" or "OFF", function() p:toggleAnimations() end))
-    add(row(cw, nil, "Refresh now", "Hardcover, trending and requests", "›", function() p:refreshRemote(true) end))
+    add(row(cw, nil, "Refresh now", "Hardcover, the trending shelf and requests", "›", function() p:refreshRemote(true) end))
     add(row(cw, nil, "About and credits", "Sprites, fonts, who made this", "›", function() p:showAbout() end))
 
     local foot = UI.tabBar(cw, "settings", function(id) p:showTab(id) end)

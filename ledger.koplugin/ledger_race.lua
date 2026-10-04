@@ -359,6 +359,9 @@ function Race.lines(p, rec, race, cache)
         t.today = string.format("Today %d of %d pages. %d more to out-read %s.", race.today, race.today_target,
             race.today_target - race.today, rival)
     end
+    if (race.today_readest or 0) > 0 then
+        t.today = t.today .. string.format(" (%d in Readest.)", race.today_readest)
+    end
     return t
 end
 

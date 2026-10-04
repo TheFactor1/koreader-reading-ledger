@@ -33,6 +33,7 @@ local Reading = require("ledger_reading")
 local Settings = require("ledger_settings")
 local Net = require("ledger_net")
 local Race = require("ledger_race")
+local Readest = require("ledger_readest")
 local UI = require("ledger_ui")
 
 local REFRESH_EVERY = 30 * 60   -- remote data older than this is refreshed on show
@@ -92,6 +93,12 @@ function Ledger:collect()
     local bb = self:bookbridge()
     local data = Data.collect(self.ui, { download_dir = bb and bb.download_dir })
     data.pages_today = Data.pagesToday()
+    -- books moved on in Readest since the last look were read elsewhere
+    local recs = {}
+    for _, rec in ipairs(data.history or {}) do recs[#recs + 1] = rec end
+    if data.lead and not data.lead.last_open then recs[#recs + 1] = data.lead end
+    for _, rec in ipairs(data.reading or {}) do if not rec.last_open then recs[#recs + 1] = rec end end
+    Readest.observe(self.settings, recs)
     return data
 end
 
@@ -104,6 +111,11 @@ function Ledger:show()
     self.race_model = nil   -- relearn your habits each time the Ledger opens
     self:showTab("reading")
     self:refreshRemote(false)
+    -- ask Readest for reading done on other devices; redraw when it lands
+    Readest.refresh(self.ui, function()
+        self.race_model = nil
+        self:redraw()
+    end)
 end
 
 function Ledger:libraryDirs()
@@ -226,17 +238,37 @@ end
 -- the rival tuned) on the way.
 function Ledger:raceModel()
     if not self.race_model then
-        self.race_model = Race.model(Data.readingHabits())
+        -- this device's statistics, with reading done in Readest folded in
+        self.race_model = Race.model(Readest.mergeHabits(Data.readingHabits(), self.settings))
         Race.settle(self.settings, self.race_model, self:rival())
     end
     return self.race_model
+end
+
+-- Pages read in Readest (on other devices) today, and in the last 7 days.
+function Ledger:readestPages()
+    local today = os.date("%Y-%m-%d")
+    return Readest.pagesSince(self.settings, today),
+        Readest.pagesSince(self.settings, os.date("%Y-%m-%d", os.time() - 6 * 86400))
+end
+
+-- A line for "What the rival has learned" about reading done in Readest.
+function Ledger:readestSummary()
+    local month = Readest.pagesSince(self.settings, os.date("%Y-%m-%d", os.time() - 29 * 86400))
+    if month > 0 then
+        return string.format("\n\n%d pages in the last 30 days were read in Readest on your other devices; they count too.", month)
+    end
+    if Readest.plugin(self.ui) then
+        return "\n\nReading you do in Readest on your other devices counts too."
+    end
+    return ""
 end
 
 function Ledger:showHabits()
     local TextViewer = require("ui/widget/textviewer")
     UIManager:show(TextViewer:new{
         title = string.format(_("What %s has learned"), self:petName(self:rival())),
-        text = Race.summary(self, self:raceModel()),
+        text = Race.summary(self, self:raceModel()) .. self:readestSummary(),
     })
 end
 
@@ -330,7 +362,7 @@ function Ledger:sourceStatus()
         out.hardcover_hint = c.hardcover_rejected and "Hardcover didn't accept the key" or "Checking on the next refresh"
     else
         out.hardcover = "ADD KEY"
-        out.hardcover_hint = "Without one, trending books come from Open Library"
+        out.hardcover_hint = "For your yearly goal, paid in fish"
     end
     local rs = G_reader_settings:readSetting("readest_sync")
     if type(rs) == "table" and rs.access_token and rs.user_id then out.readest = "SIGNED IN"
@@ -373,9 +405,8 @@ function Ledger:refreshRemote(force)
             local front, err = Net.hardcoverFront(token)
             out.hardcover, out.hardcover_err = front, err
         end
-        if not out.hardcover then
-            out.trending = Net.openLibraryTrending("weekly", 6, covers_dir)
-        end
+        -- the Library's trending shelf, with or without a Hardcover key
+        out.trending = Net.openLibraryTrending("weekly", 12, covers_dir)
         return out
     end, function(ok, out)
         self._refreshing = false
@@ -383,13 +414,44 @@ function Ledger:refreshRemote(force)
         local cache = self.cache or {}
         if out.hardcover then cache.hardcover = out.hardcover elseif token == nil then cache.hardcover = nil end
         if out.hardcover_err == "rejected" then cache.hardcover = nil; cache.hardcover_rejected = true end
-        if out.trending then cache.trending = out.trending end
+        if out.trending and #out.trending > 0 then
+            cache.trending, cache.trending_at = out.trending, os.time()
+        end
         cache.fetched_at = os.time()
         self.cache = cache
         self:refreshRequests()
         Data.saveCache(cache)
         self:redraw()
     end, 60)
+end
+
+-- The trending shelf: fetch it now if it's missing or more than a day old.
+function Ledger:refreshTrending()
+    local c = self.cache or {}
+    if c.trending and #c.trending > 0 and os.time() - (c.trending_at or 0) < 86400 then return end
+    self:refreshRemote(true)
+end
+
+-- A trending book: open it if it's on the device, else offer to request it.
+function Ledger:showTrending(rec)
+    if rec.on_device then return self:showBook(rec.on_device) end
+    local ButtonDialog = require("ui/widget/buttondialog")
+    local dlg
+    local text = rec.title .. (rec.author and ("\n" .. rec.author) or "") .. (rec.year and (" · " .. rec.year) or "")
+    local buttons = {}
+    if self:bookbridge() then
+        buttons[#buttons + 1] = { { text = _("Request it with Bookbridge"), callback = function()
+            UIManager:close(dlg)
+            self:requestBook(rec.title, rec.author)
+        end } }
+    end
+    buttons[#buttons + 1] = { { text = _("Close"), callback = function() UIManager:close(dlg) end } }
+    dlg = ButtonDialog:new{
+        title = text .. "\n\n" .. (self:bookbridge() and _("Trending on Open Library this week.")
+            or _("Trending on Open Library this week. With the Bookbridge plugin you can request it from here.")),
+        buttons = buttons,
+    }
+    UIManager:show(dlg)
 end
 
 -- Books you asked Shelfmark for that haven't arrived: Bookbridge's requests.

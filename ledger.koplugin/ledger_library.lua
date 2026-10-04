@@ -23,6 +23,7 @@ local FILTERS = {
     { id = "reading", label = "Reading" },
     { id = "new", label = "New" },
     { id = "finished", label = "Finished" },
+    { id = "trending", label = "Trending" },   -- not on the device: Open Library's week
 }
 local SORTS = { "recent", "title", "author", "series" }
 local SORT_LABEL = { recent = "Recent", title = "Title", author = "Author", series = "Series" }
@@ -76,7 +77,29 @@ end
 
 local function lower(s) return type(s) == "string" and s:lower() or "\255" end
 
+-- Open Library's trending books, as records for the grid. Each knows
+-- whether a book of that title is already on the device.
+function Library:trendingList()
+    local have = {}
+    for _, rec in ipairs(self.books or {}) do
+        if type(rec.title) == "string" then have[rec.title:lower()] = rec end
+    end
+    local list = {}
+    for _, item in ipairs((self.plugin and self.plugin.cache or {}).trending or {}) do
+        list[#list + 1] = {
+            title = item.title, author = item.author, year = item.year,
+            cover_file = item.cover, trending = true,
+            on_device = item.title and have[item.title:lower()] or nil,
+        }
+    end
+    return list
+end
+
 function Library:refilter()
+    if self.filter == "trending" then
+        self.list = self:trendingList()
+        return
+    end
     local list = {}
     for _, rec in ipairs(self.books or {}) do
         local st = Data.status(rec)
@@ -112,12 +135,16 @@ end
 -- covers arrived from the extractor: rebuild without re-fetching
 function Library:refreshCovers()
     if not UIManager:isWidgetShown(self) then return end
+    -- (the trending shelf may just have arrived)
+    if self.filter == "trending" then self:refilter() end
     self[1] = self:build()
     UIManager:setDirty(self, "ui")
 end
 
 function Library:setFilter(id)
     self.filter, self.page = id, 1
+    -- the trending shelf fetches itself if it's empty or a day old
+    if id == "trending" then self.plugin:refreshTrending() end
     self:refilter()
     self:redraw()
 end
@@ -148,6 +175,10 @@ local function barStyle()
 end
 
 local function statusOf(rec)
+    if rec.trending then
+        if rec.on_device then return "finished", nil, "ON DEVICE" end
+        return "unread", nil, rec.year and tostring(rec.year) or nil
+    end
     local st = Data.status(rec)
     if st == "reading" then
         local pct = rec.pct or 0
@@ -195,6 +226,10 @@ function Library:statusRow(style, w, st, pct, label)
         local h = UI.text("0", "pix", 9):getSize().h
         if not label then return UI.vspace(h) end
         local LeftContainer = require("ui/widget/container/leftcontainer")
+        if not pct then
+            -- no progress to show (a trending book): just the label
+            return LeftContainer:new{ dimen = Geom:new{ w = w, h = h }, UI.text(label, "pix", 9, UI.INK2) }
+        end
         return HorizontalGroup:new{ align = "center",
             LeftContainer:new{ dimen = Geom:new{ w = num_w, h = h }, UI.text(label, "pix", 9) },
             slimBar(w - num_w, s(5), pct) }
@@ -245,7 +280,9 @@ function Library:tile(rec, w, h, text_w)
     -- every tile takes its column's full width, so the grid stays aligned
     local LeftContainer = require("ui/widget/container/leftcontainer")
     local cell = LeftContainer:new{ dimen = Geom:new{ w = text_w, h = vg:getSize().h }, vg }
-    return UI.tappable(cell, function() self.plugin:showBook(rec) end)
+    return UI.tappable(cell, function()
+        if rec.trending then self.plugin:showTrending(rec) else self.plugin:showBook(rec) end
+    end)
 end
 
 -- Height of everything under a cover, measured from the real widgets.
@@ -267,6 +304,7 @@ function Library:build()
     local top = VerticalGroup:new{ align = "left" }
     local total = #(self.books or {})
     local count = self.filter == "all" and string.format("%d BOOKS", total)
+        or self.filter == "trending" and "THIS WEEK · OPEN LIBRARY"
         or string.format("%d OF %d", #self.list, total)
     top[#top + 1] = UI.header(cw, "LIBRARY", UI.text(count, "pix", 11, UI.INK2))
 
@@ -275,7 +313,10 @@ function Library:build()
         if #chips > 0 then chips[#chips + 1] = UI.hspace(s(6)) end
         chips[#chips + 1] = UI.button(f.label, function() self:setFilter(f.id) end, f.id ~= self.filter, 10)
     end
-    local sort_btn = UI.button("Sort: " .. SORT_LABEL[self.sort], function() self:nextSort() end, true, 10)
+    -- (the trending shelf is in Open Library's order: no sorting there)
+    local sort_btn = self.filter ~= "trending"
+        and UI.button("Sort: " .. SORT_LABEL[self.sort], function() self:nextSort() end, true, 10)
+        or UI.hspace(0)
     top[#top + 1] = UI.spread(cw, chips, sort_btn)
     top[#top + 1] = UI.vspace(s(12))
 
@@ -332,7 +373,8 @@ function Library:build()
     end
     if #self.list == 0 then
         local empty = { all = "No books here yet. Pip will bring some.", reading = "Nothing in progress.",
-            new = "Nothing new. Pip is out looking.", finished = "No finished books yet. Keep racing." }
+            new = "Nothing new yet.", finished = "No finished books yet. Keep racing.",
+            trending = "Nothing here yet. Trending books come from Open Library when you're online." }
         grid[#grid + 1] = UI.text(empty[self.filter] or "", "body", 13, UI.INK2, cw)
     end
 

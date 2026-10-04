@@ -509,6 +509,15 @@ end
 -- A book cover from KOReader's cover cache, fitted to w x h; or a drawn
 -- stand-in with the title when there is none (yet).
 function UI.cover(rec, w, h)
+    -- a cover image file (trending books, which aren't on the device)
+    if rec.cover_file and lfs.attributes(rec.cover_file, "mode") == "file" then
+        local b = Screen:scaleBySize(2)
+        local CenterContainer = require("ui/widget/container/centercontainer")
+        local img = ImageWidget:new{ file = rec.cover_file, width = w - 2 * b, height = h - 2 * b,
+            stretch_limit_percentage = 10 }
+        return FrameContainer:new{ bordersize = b, padding = 0, margin = 0, background = UI.WHITE,
+            CenterContainer:new{ dimen = Geom:new{ w = w - 2 * b, h = h - 2 * b }, img } }, true
+    end
     local bim_ok, BIM = pcall(require, "bookinfomanager")
     if bim_ok and BIM and rec.file then
         local ok, info = pcall(BIM.getBookInfo, BIM, rec.file, true)
