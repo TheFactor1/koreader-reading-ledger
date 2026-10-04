@@ -133,54 +133,122 @@ end
 
 -- A cover, untouched; the status lives underneath it: a thin progress line
 -- while you're reading, and a small grey note at the end of the author line.
--- Bar styles (Menu > Library bar): "under" a thick bar under the cover,
--- "band" the bar set into the cover's bottom edge, "blocks" ten pixel
--- segments, "side" a bar with the number to its right. Every book gets
--- the same element: NEW (empty) and DONE (full) for the others.
-local BAR_STYLE_DEFAULT = "under"
+-- Status styles (setting ledger_bar_style while one is chosen):
+--   pill    an outlined tag under the cover: tiny pet + number / NEW / DONE
+--   edge    the cover's bottom edge is the progress line; number on the title line
+--   numeral no bar; pixel-font number right-aligned on the title line, pet before it
+--   inline  one row: fixed-width number column, slim bar filling the rest
+local BAR_STYLE_DEFAULT = "inline"
+
+local function statusOf(rec)
+    local st = Data.status(rec)
+    if st == "reading" then
+        local pct = rec.pct or 0
+        return st, pct, string.format("%d%%", math.floor(pct * 100 + 0.5))
+    elseif st == "finished" then return st, 1, "DONE"
+    elseif st == "new" then return st, 0, "NEW" end
+    return st, nil, nil
+end
+
+local PET = { reading = "cat_sit", new = "dog_sit", finished = "fish" }
+
+local function petIcon(st, h)
+    local name = PET[st]
+    if not name then return nil end
+    if name == "fish" then h = math.floor(h * 0.6) end
+    return UI.sprite(name, UI.spriteScaleH(name, h))
+end
+
+-- A slim progress line: grey track, black fill.
+local function slimBar(w, h, pct)
+    local Widget = require("ui/widget/widget")
+    return Widget:new{
+        dimen = Geom:new{ w = w, h = h },
+        paintTo = function(_, bb, x, y)
+            bb:paintRect(x, y, w, h, UI.INK4)
+            local fill = math.floor(w * math.max(0, math.min(1, pct or 0)))
+            if fill > 0 then bb:paintRect(x, y, fill, h, UI.BLACK) end
+        end,
+    }
+end
+
+-- The status element and how tall it is, for one style (used to size the grid too).
+function Library:statusRow(style, w, st, pct, label)
+    local function s(n) return Screen:scaleBySize(n) end
+    if style == "pill" then
+        if not label then return UI.vspace(s(22)) end
+        local inner = HorizontalGroup:new{ align = "center" }
+        local icon = petIcon(st, s(12))
+        if icon then inner[#inner + 1] = icon; inner[#inner + 1] = UI.hspace(s(4)) end
+        inner[#inner + 1] = UI.text(label, "pix", 9)
+        return FrameContainer:new{ bordersize = s(2), color = UI.BLACK, background = UI.WHITE, margin = 0,
+            padding = s(2), padding_left = s(5), padding_right = s(6), inner }
+    elseif style == "inline" then
+        local num_w = UI.text("100%", "pix", 9):getSize().w + s(6)
+        local h = UI.text("0", "pix", 9):getSize().h
+        if not label then return UI.vspace(h) end
+        local LeftContainer = require("ui/widget/container/leftcontainer")
+        return HorizontalGroup:new{ align = "center",
+            LeftContainer:new{ dimen = Geom:new{ w = num_w, h = h }, UI.text(label, "pix", 9) },
+            slimBar(w - num_w, s(5), pct) }
+    end
+    return nil -- edge and numeral carry status on the cover / title line
+end
 
 function Library:tile(rec, w, h, text_w)
     text_w = text_w or w
     local function s(n) return Screen:scaleBySize(n) end
     local style = G_reader_settings:readSetting("ledger_bar_style") or BAR_STYLE_DEFAULT
-    local st = Data.status(rec)
-    local pct, label
-    if st == "reading" then
-        pct = rec.pct or 0
-        label = string.format("%d%%", math.floor(pct * 100 + 0.5))
-    elseif st == "finished" then
-        pct, label = 1, "DONE"
-    elseif st == "new" then
-        pct, label = 0, "NEW"
+    local st, pct, label = statusOf(rec)
+    local vg = VerticalGroup:new{ align = "left" }
+
+    local cover = UI.cover(rec, w, h)
+    if style == "edge" and pct then
+        -- the cover's bottom edge doubles as the progress line
+        local OverlapGroup = require("ui/widget/overlapgroup")
+        local line = slimBar(w, s(5), pct)
+        line.overlap_offset = { 0, h - s(5) }
+        cover = OverlapGroup:new{ dimen = Geom:new{ w = w, h = h }, cover, line }
     end
-    local bar_h = s(16)
-    local bar
-    if label and (style == "rider" or style == "lane") then
-        bar = UI.petBar(w, bar_h, s(16), pct, label, st, style)
-        bar_h = bar:getSize().h
-    elseif label then
-        bar = UI.statusBar(w, bar_h, pct, label, style == "blocks" and "blocks" or "solid", style == "side")
+    vg[#vg + 1] = cover
+    vg[#vg + 1] = UI.vspace(s(6))
+
+    local row = self:statusRow(style, w, st, pct, label)
+    if row then
+        vg[#vg + 1] = row
+        vg[#vg + 1] = UI.vspace(s(6))
     end
 
-    local vg = VerticalGroup:new{ align = "left" }
-    if style == "band" and bar then
-        local cover = UI.cover(rec, w, h)
-        local OverlapGroup = require("ui/widget/overlapgroup")
-        bar.overlap_offset = { 0, h - bar_h }
-        vg[#vg + 1] = OverlapGroup:new{ dimen = Geom:new{ w = w, h = h }, cover, bar }
-        vg[#vg + 1] = UI.vspace(s(6))
-    else
-        vg[#vg + 1] = UI.cover(rec, w, h)
-        vg[#vg + 1] = UI.vspace(s(4))
-        vg[#vg + 1] = bar or UI.vspace(bar_h)
-        vg[#vg + 1] = UI.vspace(s(5))
+    -- title line; edge and numeral put the number at its right end
+    local title_right
+    if (style == "edge" or style == "numeral") and label then
+        if style == "numeral" then
+            local icon = petIcon(st, s(11))
+            title_right = HorizontalGroup:new{ align = "center" }
+            if icon then title_right[#title_right + 1] = icon; title_right[#title_right + 1] = UI.hspace(s(4)) end
+            title_right[#title_right + 1] = UI.text(label, "pix", 10)
+        else
+            title_right = UI.text(label, "pix", 9, UI.INK2)
+        end
     end
-    vg[#vg + 1] = UI.text(rec.title or "?", "bold", 10, UI.BLACK, w)
+    local right_w = title_right and title_right:getSize().w + s(8) or 0
+    local title = UI.text(rec.title or "?", "bold", 10, UI.BLACK, w - right_w)
+    vg[#vg + 1] = title_right and UI.spread(w, title, title_right) or title
     vg[#vg + 1] = UI.text(rec.author or "", "body", 9, UI.INK2, w)
     -- every tile takes its column's full width, so the grid stays aligned
     local LeftContainer = require("ui/widget/container/leftcontainer")
     local cell = LeftContainer:new{ dimen = Geom:new{ w = text_w, h = vg:getSize().h }, vg }
     return UI.tappable(cell, function() self.plugin:showBook(rec) end)
+end
+
+-- Height of everything under a cover, measured from the real widgets.
+function Library:captionHeight(w)
+    local function s(n) return Screen:scaleBySize(n) end
+    local style = G_reader_settings:readSetting("ledger_bar_style") or BAR_STYLE_DEFAULT
+    local h = s(6) + UI.text("Ag", "bold", 10):getSize().h + UI.text("Ag", "body", 9):getSize().h
+    local row = self:statusRow(style, w, "reading", 0.5, "50%")
+    if row then h = h + row:getSize().h + s(6) end
+    return h
 end
 
 function Library:build()
@@ -210,7 +278,7 @@ function Library:build()
     local cols = cw >= s(420) and 4 or 3
     local gap = s(12)
     local tile_w = math.floor((cw - (cols - 1) * gap) / cols)
-    local text_h = s(80)
+    local text_h = self:captionHeight(tile_w)
     local grid_h = H - 2 * m - top:getSize().h - foot_h
     -- as many full-width rows as fit; if two-thirds of another row is left
     -- over, shrink the covers a little so it fits too
