@@ -269,6 +269,18 @@ function Ledger:tuckBookbridge()
     end
 end
 
+-- Bookbridge not connected yet: straight to "Connect a book server" (find
+-- the server, show a code, approve it on a phone); once it is, its menu.
+function Ledger:openBookbridge()
+    local bb = self:bookbridge()
+    if bb and not (bb.server_url and bb.server_url ~= "") and bb.connectServer then
+        local Trapper = require("ui/trapper")
+        Trapper:wrap(function() bb:connectServer() end)
+        return
+    end
+    self:showBookbridgeMenu()
+end
+
 -- Bookbridge's whole menu, in KOReader's own menu widget, from the Ledger.
 function Ledger:showBookbridgeMenu()
     local bb = self:bookbridge()

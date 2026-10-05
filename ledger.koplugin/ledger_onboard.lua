@@ -194,9 +194,10 @@ function Onboard:build()
             st.readest == "SIGNED IN" and "Reading there counts in the race."
                 or "Sign in from Readest's own menu and reading there counts too.", nil))
         add(checkRow(cw, "Bookbridge", st.bookbridge,
-            "Search and request books, new arrivals. It lives in the Ledger: Settings > Bookbridge.",
-            p:bookbridge() and UI.button(st.bookbridge == "CONNECTED" and "Open" or "Set up",
-                function() p:showBookbridgeMenu() end, true, 10) or nil))
+            st.bookbridge == "NOT SET UP" and "Search and request books. Connect it to your book server with a code -- nothing to type."
+                or "Search and request books, new arrivals. It lives in the Ledger: Settings > Bookbridge.",
+            p:bookbridge() and UI.button(st.bookbridge == "CONNECTED" and "Open" or "Connect",
+                function() p:openBookbridge() end, true, 10) or nil))
         add(checkRow(cw, "Hardcover", st.hardcover, "Your yearly goal, paid in fish. Uses your own API key.",
             UI.button(st.hardcover == "ADD KEY" and "Add key" or "Change", function() p:editHardcoverKey() end, true, 10)))
     else
