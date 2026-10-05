@@ -345,6 +345,16 @@ end
 -- nil when there are no statistics at all.
 local habits_cache = nil   -- { date, weeks, out }: past days don't change
 
+-- (callers get their own copy: the merge with Readest and this device's
+-- progress adds to it, and the cache must not keep those additions)
+local function copyHabits(h)
+    if not h then return nil end
+    local out = { days = {}, hours = {}, first = h.first }
+    for d, n in pairs(h.days) do out.days[d] = n end
+    for k, v in pairs(h.hours) do out.hours[k] = v end
+    return out
+end
+
 function Data.readingHabits(weeks, now)
     weeks = weeks or 8
     now = now or os.time()
@@ -358,11 +368,11 @@ function Data.readingHabits(weeks, now)
             local n = Data._countSince(midnight)
             if n then out.days[today] = n > 0 and n or nil end
         end
-        return out
+        return copyHabits(out)
     end
     local out = Data._readingHabits(weeks, now)
     habits_cache = { date = today, weeks = weeks, out = out }
-    return out
+    return copyHabits(out)
 end
 
 -- Distinct pages turned since a time (nil without statistics).

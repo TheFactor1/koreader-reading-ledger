@@ -110,7 +110,9 @@ end
 local squeeze_fits = {}
 
 function Reading:build(squeeze)
-    local size_key = Screen:getWidth() .. "x" .. Screen:getHeight()
+    -- (per screen size and book: a short description needs less squeezing)
+    local cur = self.books[self.index]
+    local size_key = Screen:getWidth() .. "x" .. Screen:getHeight() .. ":" .. tostring(cur and cur.file)
     squeeze = squeeze or squeeze_fits[size_key] or 0
     local tt = Timing.start()
     local function s(n) return Screen:scaleBySize(n) end
