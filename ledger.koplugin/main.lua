@@ -134,7 +134,9 @@ end
 function Ledger:addToMainMenu(menu_items)
     menu_items.reading_ledger = {
         text = _("Reading Ledger"),
-        sorting_hint = "main",
+        -- with the other plugins, under Tools (in "main" it sat at the very
+        -- bottom of the last tab, past Exit, where nobody looks)
+        sorting_hint = "tools",
         callback = function() self:show() end,
     }
 end
