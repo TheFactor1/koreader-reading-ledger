@@ -23,8 +23,15 @@ local FILTERS = {
     { id = "reading", label = "Reading" },
     { id = "new", label = "New" },
     { id = "finished", label = "Finished" },
-    { id = "trending", label = "Trending" },   -- not on the device: Open Library's week
 }
+-- Shelves of books from outside the device, behind the "More" button.
+local SHELVES = {
+    { id = "trending", label = "Trending", hint = "This week on Open Library" },
+    { id = "want", label = "Want to read", hint = "Your Hardcover shelf" },
+    { id = "requested", label = "Requested", hint = "Asked for through Bookbridge, not here yet" },
+}
+local SHELF = {}
+for _, f in ipairs(SHELVES) do SHELF[f.id] = f end
 local SORTS = { "recent", "title", "author", "series" }
 local SORT_LABEL = { recent = "Recent", title = "Title", author = "Author", series = "Series" }
 
@@ -78,27 +85,38 @@ end
 
 local function lower(s) return type(s) == "string" and s:lower() or "\255" end
 
--- Open Library's trending books, as records for the grid. Each knows
--- whether a book of that title is already on the device.
-function Library:trendingList()
+-- Books from a list (trending, Want to Read, requests) as records for the
+-- grid, each knowing whether a book of that title is already here.
+function Library:shelfList(items, extra)
     local have = {}
     for _, rec in ipairs(self.books or {}) do
         if type(rec.title) == "string" then have[rec.title:lower()] = rec end
     end
     local list = {}
-    for _, item in ipairs((self.plugin and self.plugin.cache or {}).trending or {}) do
-        list[#list + 1] = {
-            title = item.title, author = item.author, year = item.year,
-            cover_file = item.cover, trending = true,
-            on_device = item.title and have[item.title:lower()] or nil,
-        }
+    for _, item in ipairs(items or {}) do
+        if type(item) == "table" and item.title then
+            local rec = {
+                title = item.title, author = item.author, year = item.year,
+                cover_file = item.cover, trending = true,
+                on_device = have[tostring(item.title):lower()],
+            }
+            for k, v in pairs(extra or {}) do rec[k] = v end
+            list[#list + 1] = rec
+        end
     end
     return list
 end
 
 function Library:refilter()
+    local c = self.plugin and self.plugin.cache or {}
     if self.filter == "trending" then
-        self.list = self:trendingList()
+        self.list = self:shelfList(c.trending, { source = "Trending on Open Library this week." })
+        return
+    elseif self.filter == "want" then
+        self.list = self:shelfList(c.want, { source = "On your Want to Read shelf on Hardcover." })
+        return
+    elseif self.filter == "requested" then
+        self.list = self:shelfList(c.requests, { requested = true })
         return
     end
     local list = {}
@@ -137,15 +155,31 @@ end
 function Library:refreshCovers()
     if not UIManager:isWidgetShown(self) then return end
     -- (the trending shelf may just have arrived)
-    if self.filter == "trending" then self:refilter() end
+    if SHELF[self.filter] then self:refilter() end
     self[1] = self:build()
     UIManager:setDirty(self, "ui")
+end
+
+-- The outside shelves, to pick from.
+function Library:chooseShelf()
+    local ButtonDialog = require("ui/widget/buttondialog")
+    local dlg
+    local buttons = {}
+    for _, f in ipairs(SHELVES) do
+        buttons[#buttons + 1] = { { text = (f.id == self.filter and "✓ " or "") .. f.label .. " -- " .. f.hint:lower(),
+            align = "left", callback = function() UIManager:close(dlg); self:setFilter(f.id) end } }
+    end
+    dlg = ButtonDialog:new{ title = "Shelves", buttons = buttons }
+    UIManager:show(dlg)
 end
 
 function Library:setFilter(id)
     self.filter, self.page = id, 1
     -- the trending shelf fetches itself if it's empty or a day old
     if id == "trending" then self.plugin:refreshTrending() end
+    local c = self.plugin.cache or {}
+    if id == "want" and not c.want and self.plugin:hardcoverToken() then self.plugin:refreshRemote(true) end
+    if id == "requested" then self.plugin:refreshRequests() end
     self:refilter()
     self:redraw()
 end
@@ -178,6 +212,7 @@ end
 local function statusOf(rec)
     if rec.trending then
         if rec.on_device then return "finished", nil, "ON DEVICE" end
+        if rec.requested then return "unread", nil, "WAITING" end
         return "unread", nil, rec.year and tostring(rec.year) or nil
     end
     local st = Data.status(rec)
@@ -286,7 +321,7 @@ function Library:tile(rec, w, h, text_w)
     local cell = LeftContainer:new{ dimen = Geom:new{ w = text_w, h = vg:getSize().h }, vg }
     -- tap: open the book; hold: its page (the race, details, Readest)
     if rec.trending then
-        return UI.tappable(cell, function() self.plugin:showTrending(rec) end)
+        return UI.tappable(cell, function() self.plugin:showShelfBook(rec) end)
     end
     return UI.tappable(cell, function() self.plugin:openBook(rec) end, function() self.plugin:showBook(rec) end)
 end
@@ -310,7 +345,7 @@ function Library:build()
     local top = VerticalGroup:new{ align = "left" }
     local total = #(self.books or {})
     local count = self.filter == "all" and string.format("%d BOOKS", total)
-        or self.filter == "trending" and "TRENDING THIS WEEK"
+        or SHELF[self.filter] and SHELF[self.filter].label:upper()
         or string.format("%d OF %d", #self.list, total)
     -- KOReader's file browser (folders, file operations): a link up here
     local files = UI.tappable(UI.text("FILES >", "pix", 11), function() self.plugin:openFiles() end)
@@ -321,8 +356,12 @@ function Library:build()
         if #chips > 0 then chips[#chips + 1] = UI.hspace(s(6)) end
         chips[#chips + 1] = UI.button(f.label, function() self:setFilter(f.id) end, f.id ~= self.filter, 10)
     end
+    -- the outside shelves: one button, named after the shelf when one's open
+    local shelf = SHELF[self.filter]
+    chips[#chips + 1] = UI.hspace(s(6))
+    chips[#chips + 1] = UI.button(shelf and shelf.label or "More +", function() self:chooseShelf() end, not shelf, 10)
     -- (the trending shelf is in Open Library's order: no sorting there)
-    local sort_btn = self.filter ~= "trending"
+    local sort_btn = not SHELF[self.filter]
         and UI.button("Sort: " .. SORT_LABEL[self.sort], function() self:nextSort() end, true, 10)
         or UI.hspace(0)
     top[#top + 1] = UI.spread(cw, chips, sort_btn)
@@ -345,6 +384,9 @@ function Library:build()
         -- covers may shrink to two-thirds of the column's natural height to fit a row more
         local min_row = math.floor(tile_w * 1.45 * 0.66) + s(4) + text_h + gap
         local rows = math.max(1, math.floor(grid_h / min_row))
+        -- but a short shelf that fits at full size gets full-size covers
+        local rows_full = math.max(1, math.floor(grid_h / (math.floor(tile_w * 1.45) + s(4) + text_h + gap)))
+        if #self.list <= rows_full * cols then rows = rows_full end
         local cover_h = math.min(math.floor(tile_w * 1.45), math.floor(grid_h / rows) - s(4) - text_h - gap)
         local cover_w = math.min(tile_w, math.floor(cover_h / 1.45))
         -- when the covers shrank, spread the columns out so the last one still
@@ -390,7 +432,10 @@ function Library:build()
     if #self.list == 0 then
         local empty = { all = "No books here yet. Pip will bring some.", reading = "Nothing in progress.",
             new = "Nothing new yet.", finished = "No finished books yet. Keep racing.",
-            trending = "Nothing here yet. Trending books come from Open Library when you're online." }
+            trending = "Nothing here yet. Trending books come from Open Library when you're online.",
+            want = self.plugin:hardcoverToken() and "Nothing on your Want to Read shelf yet, or it hasn't loaded: it comes with the next refresh."
+                or "Add your Hardcover key in Settings to see your Want to Read shelf here.",
+            requested = "Nothing waiting. Books you request through Bookbridge show up here until they arrive." }
         grid[#grid + 1] = UI.text(empty[self.filter] or "", "body", 13, UI.INK2, cw)
     end
 

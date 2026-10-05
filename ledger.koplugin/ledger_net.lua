@@ -154,6 +154,44 @@ function Net.hardcoverFront(token)
     return out
 end
 
+-- Your Hardcover Want to Read shelf, most recently added first (same fields
+-- Bookbridge's shelf view uses). Covers are fetched into covers_dir.
+function Net.hardcoverWant(token, limit, covers_dir)
+    local data, err = Net.hardcover(token, [[
+        query LedgerWant($limit: Int!) {
+            me {
+                user_books(where: {status_id: {_eq: 1}}, order_by: {updated_at: desc}, limit: $limit) {
+                    book {
+                        id
+                        title
+                        release_year
+                        cached_image
+                        contributions(where: {contribution: {_eq: "Author"}}) { author { name } }
+                    }
+                }
+            }
+        }
+    ]], { limit = limit or 12 })
+    if not data then return nil, err end
+    local me = type(data.me) == "table" and data.me[1]
+    if type(me) ~= "table" or type(me.user_books) ~= "table" then return nil, "no shelf" end
+    local out = {}
+    for _, ub in ipairs(me.user_books) do
+        local b = type(ub) == "table" and type(ub.book) == "table" and ub.book
+        if b and str(b.title) then
+            local c = type(b.contributions) == "table" and b.contributions[1]
+            local author = type(c) == "table" and type(c.author) == "table" and str(c.author.name) or nil
+            local item = { title = str(b.title), author = author, year = num(b.release_year), id = num(b.id) }
+            local img = type(b.cached_image) == "table" and str(b.cached_image.url)
+            if img and covers_dir and item.id then
+                item.cover = Net.fetchFile(img, string.format("%s/hc-%d.jpg", covers_dir, item.id))
+            end
+            out[#out + 1] = item
+        end
+    end
+    return out
+end
+
 -- One book's status and rating on your Hardcover account.
 function Net.hardcoverUserBook(token, book_id)
     local data, err = Net.hardcover(token, [[

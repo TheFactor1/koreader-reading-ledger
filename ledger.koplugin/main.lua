@@ -647,6 +647,8 @@ function Ledger:refreshRemote(force)
         if token then
             local front, err = Net.hardcoverFront(token)
             out.hardcover, out.hardcover_err = front, err
+            -- the Library's Want to Read shelf
+            if front then out.want = Net.hardcoverWant(token, 12, covers_dir) end
         end
         -- the Library's trending shelf, with or without a Hardcover key:
         -- once a day is plenty for a weekly list
@@ -658,6 +660,8 @@ function Ledger:refreshRemote(force)
         local cache = self.cache or {}
         if out.hardcover then cache.hardcover = out.hardcover elseif token == nil then cache.hardcover = nil end
         if out.hardcover_err == "rejected" then cache.hardcover = nil; cache.hardcover_rejected = true end
+        if out.want then cache.want = out.want end
+        if token == nil then cache.want = nil end
         if out.trending and #out.trending > 0 then
             cache.trending, cache.trending_at = out.trending, os.time()
         end
@@ -676,6 +680,49 @@ function Ledger:refreshTrending()
     self:refreshRemote(true)
 end
 
+-- A book on one of the Library's outside shelves (Trending, Want to Read,
+-- Requested): open it if it's on the device, else say what it is and offer
+-- to request it.
+function Ledger:showShelfBook(rec)
+    if rec.on_device then return self:openBook(rec.on_device) end
+    if rec.requested then
+        UIManager:show(InfoMessage:new{
+            text = (rec.title or "?") .. (rec.author and ("\n" .. rec.author) or "") .. "\n\n"
+                .. _("Requested through Bookbridge; it hasn't arrived yet. It shows up under New when it does."),
+            timeout = 5,
+        })
+        return
+    end
+    return self:showTrending(rec)
+end
+
+-- Every finished race: won or lost, and by how much.
+function Ledger:showResults()
+    local list = {}
+    for _, r in pairs(self.settings:readSetting("races") or {}) do
+        if type(r) == "table" and type(r.result) == "table" then list[#list + 1] = r.result end
+    end
+    table.sort(list, function(a, b) return (a.at or 0) > (b.at or 0) end)
+    local lines = {}
+    local won, lost = 0, 0
+    for _, res in ipairs(list) do
+        if res.won then won = won + 1 else lost = lost + 1 end
+        local who = self:petName(res.rival or self:rival())
+        lines[#lines + 1] = string.format("%s  %s\n   %s%s", res.won and "WON " or "LOST", res.title or "?",
+            res.won and string.format("beat %s by %d %s", who, res.by or 0, (res.by or 0) == 1 and "page" or "pages")
+                or string.format("%s got to the flag first", who),
+            res.at and (" · " .. os.date("%d %b %Y", res.at)) or "")
+    end
+    local text
+    if #list == 0 then
+        text = _("No finished races yet. Finish a book you're racing and its result lands here.")
+    else
+        text = string.format(_("%d won, %d lost."), won, lost) .. "\n\n" .. table.concat(lines, "\n\n")
+    end
+    local TextViewer = require("ui/widget/textviewer")
+    UIManager:show(TextViewer:new{ title = _("Race results"), text = text })
+end
+
 -- A trending book: open it if it's on the device, else offer to request it.
 function Ledger:showTrending(rec)
     if rec.on_device then return self:showBook(rec.on_device) end
@@ -691,8 +738,8 @@ function Ledger:showTrending(rec)
     end
     buttons[#buttons + 1] = { { text = _("Close"), callback = function() UIManager:close(dlg) end } }
     dlg = ButtonDialog:new{
-        title = text .. "\n\n" .. (self:bookbridge() and _("Trending on Open Library this week.")
-            or _("Trending on Open Library this week. With the Bookbridge plugin you can request it from here.")),
+        title = text .. "\n\n" .. (rec.source or _("Trending on Open Library this week."))
+            .. (self:bookbridge() and "" or (" " .. _("With the Bookbridge plugin you can request it from here."))),
         buttons = buttons,
     }
     UIManager:show(dlg)

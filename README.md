@@ -60,8 +60,11 @@ Three pages, switched by a tab bar at the bottom (2026-10-04):
   they are. A line for today's race, today / this week / streak, new arrivals
   and what's on order, the yearly goal in fish.
   Several books on the go: swipe or tap < > to switch.
-- **Library**: every book on the device as a paged grid of covers, filters and
-  sort, the Trending shelf, Files for KOReader's own browser. (Status bars are still being chosen.)
+- **Library**: every book on the device as a paged grid of covers (tap to
+  open, hold for its page), filters and sort, and behind **More**: Trending
+  (Open Library this week), Want to read (your Hardcover shelf) and Requested
+  (asked for through Bookbridge, not here yet). Files for KOReader's own
+  browser. (Status bars are still being chosen.)
 - **Settings**: your runner and your rival (and their names), what the rival
   has learned about your reading, Hardcover key, Readest and Bookbridge status,
   animations on/off, refresh, about and credits.

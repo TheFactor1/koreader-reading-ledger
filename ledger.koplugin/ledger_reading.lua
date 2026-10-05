@@ -259,7 +259,9 @@ function Reading:build(squeeze)
         statBlock("Today", tostring(today_n) .. " p", bw),
         statBlock("This week", tostring(week_n) .. " p", bw),
         statBlock("Streak", streak_n .. (streak_n == 1 and " day" or " days"), bw),
-        statBlock("vs " .. plugin:petName(plugin:rival()), string.format("%d-%d", won, lost), cw - 3 * bw),
+        -- (tap the record for every finished race)
+        UI.tappable(statBlock("vs " .. plugin:petName(plugin:rival()), string.format("%d-%d", won, lost), cw - 3 * bw),
+            function() plugin:showResults() end),
     })
     add(UI.vspace(s(8)))
     add(UI.rule(cw, s(2)))
@@ -268,8 +270,14 @@ function Reading:build(squeeze)
     -- arrivals and waiting, one line into the library
     local n_new = #(d.just_in or {})
     local n_wait = #(c.requests or {})
-    local line = string.format("%d new %s · waiting for %d  ›", n_new, n_new == 1 and "book" or "books", n_wait)
-    add(UI.tappable(UI.text(line, "body", 12, UI.BLACK, cw), function() plugin:showTab("library", { filter = "new" }) end))
+    -- two links: the new ones, and the ones on order (the Requested shelf)
+    add(HorizontalGroup:new{ align = "center",
+        UI.tappable(UI.text(string.format("%d new %s ›", n_new, n_new == 1 and "book" or "books"), "body", 12),
+            function() plugin:showTab("library", { filter = "new" }) end),
+        UI.text("   ·   ", "body", 12, UI.INK2),
+        UI.tappable(UI.text(string.format("waiting for %d ›", n_wait), "body", 12),
+            function() plugin:showTab("library", { filter = "requested" }) end),
+    })
 
     -- footer: goal, then the tabs
     local foot = VerticalGroup:new{ align = "left" }
