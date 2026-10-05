@@ -97,11 +97,12 @@ end
 local last_pull = 0
 
 -- Ask Readest for the latest statistics and positions, quietly; on_change
--- runs once they've landed. At most every five minutes, and only online.
+-- runs once they've landed. At most hourly, and only when already online
+-- (it never turns Wi-Fi on).
 function R.refresh(ui, on_change)
     local rs = R.plugin(ui)
     if not rs or not NetworkMgr:isOnline() then return end
-    if os.time() - last_pull < 300 then return end
+    if os.time() - last_pull < 3600 then return end
     last_pull = os.time()
     if on_change then listeners = { on_change } end
     local ok, err = pcall(function()

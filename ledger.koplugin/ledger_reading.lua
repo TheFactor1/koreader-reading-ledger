@@ -31,6 +31,7 @@ local UIManager = require("ui/uimanager")
 local Chase = require("ledger_chase")
 local Data = require("ledger_data")
 local Race = require("ledger_race")
+local Timing = require("ledger_timing")
 local UI = require("ledger_ui")
 
 local Screen = Device.screen
@@ -93,7 +94,8 @@ end
 
 function Reading:repaint()
     UIManager:setDirty(self, "ui")
-    if self.chase then self.chase:runIn() end
+    -- (the run-in only when a runner moved since it was last on screen)
+    if self.chase then self.plugin:runInIfMoved(self) end
 end
 
 local function statBlock(label, value, w)
@@ -103,8 +105,14 @@ local function statBlock(label, value, w)
     return CenterContainer:new{ dimen = Geom:new{ w = w, h = vg:getSize().h }, vg }
 end
 
+-- The squeeze level that fitted last time (per screen size): start there,
+-- instead of building the page once or twice for nothing on every show.
+local squeeze_fits = {}
+
 function Reading:build(squeeze)
-    squeeze = squeeze or 0
+    local size_key = Screen:getWidth() .. "x" .. Screen:getHeight()
+    squeeze = squeeze or squeeze_fits[size_key] or 0
+    local tt = Timing.start()
     local function s(n) return Screen:scaleBySize(n) end
     local W, H = self.dimen.w, self.dimen.h
     local m = math.floor(W * 0.045)
@@ -160,6 +168,7 @@ function Reading:build(squeeze)
         -- cover and details
         local cover_w = math.floor(cw * (0.36 - 0.05 * squeeze))
         local cover = UI.tappable((UI.cover(rec, cover_w, math.floor(cover_w * 1.5))), function() plugin:showBook(rec) end)
+        Timing.lap(tt, "build.cover" .. squeeze)
         local info_w = cw - cover_w - s(16)
         local title = UI.para(rec.title or "?", "bold", 20, info_w)
         local info = VerticalGroup:new{ align = "left", title }
@@ -174,6 +183,7 @@ function Reading:build(squeeze)
         -- (keyed by file: a book without a checksum has no hash)
         local stats = self.stats_for == rec.file and self.stats or Data.readingStats(rec.hash)
         self.stats, self.stats_for = stats, rec.file
+        Timing.lap(tt, "build.stats" .. squeeze)
         local left = Data.timeLeft(stats.pace or stats.all_pace, rec.pages,
             math.max(rec.pct or 0, rec.readest and rec.readest.pct or 0))
         if left then facts[#facts + 1] = left end
@@ -201,6 +211,7 @@ function Reading:build(squeeze)
 
         -- description
         local desc = Data.description(rec)
+        Timing.lap(tt, "build.description" .. squeeze)
         local desc_lines = math.max(0, 4 - squeeze)
         if desc and desc_lines > 0 then
             local box = TextBoxWidget:new{
@@ -218,6 +229,7 @@ function Reading:build(squeeze)
         local race = Race.state(rec, rstats, plugin.settings, plugin:runner(), plugin:rival(), plugin:raceModel())
         race.today_readest = rd_today
         local lines = Race.lines(plugin, rec, race, self.cache)
+        Timing.lap(tt, "build.race" .. squeeze)
         local chase = Chase:new{
             width = cw, height = math.floor(H * (0.19 - 0.02 * squeeze)),
             you = plugin:runner(), rival = plugin:rival(),
@@ -273,7 +285,9 @@ function Reading:build(squeeze)
     foot[#foot + 1] = UI.tabBar(cw, "reading", function(id) plugin:showTab(id) end)
 
     local used = main:getSize().h + foot:getSize().h + 2 * m
+    Timing.lap(tt, "build.rest" .. squeeze)
     if used > H and squeeze < 3 then return self:build(squeeze + 1) end
+    squeeze_fits[size_key] = squeeze
     -- share the spare room: up to s(20) more per gap, the rest stays above
     -- the footer (the gap after the arrivals line is the last one)
     local last = UI.vspace(0)

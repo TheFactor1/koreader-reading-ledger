@@ -34,9 +34,15 @@ local Settings = require("ledger_settings")
 local Net = require("ledger_net")
 local Race = require("ledger_race")
 local Readest = require("ledger_readest")
+local Timing = require("ledger_timing")
 local UI = require("ledger_ui")
 
-local REFRESH_EVERY = 30 * 60   -- remote data older than this is refreshed on show
+local REFRESH_EVERY = 2 * 3600  -- Hardcover and requests older than this are refreshed on show
+local TRENDING_EVERY = 86400     -- Open Library's weekly list, once a day
+
+-- Where the runners stood when last on screen, per book: the run-in
+-- animation only plays when one of them moved.
+local shown_positions = {}
 
 -- Set by "Continue from p. N" (Readest's place): the file whose Readest position to jump to
 -- once it's open (the reader's own plugin instance does the jump).
@@ -51,6 +57,8 @@ local shared_settings = nil
 -- and each time a book is closed -- but not when the file browser is merely
 -- rebuilt (a setting changed, Files chosen from the Ledger).
 local first_start = true
+local first_start_show = true   -- (the first home show of the session is a cold start)
+local exit_timer = nil    -- (timing: from closing a book to the Ledger drawn)
 local registerStartWith   -- (below, with the home screen)
 local back_from_book = false
 
@@ -61,7 +69,25 @@ local Ledger = WidgetContainer:extend{
 
 function Ledger:init()
     UI.setPluginDir(self.path)
-    shared_settings = shared_settings or LuaSettings:open(DataStorage:getSettingsDir() .. "/ledger.lua")
+    Timing.init(self.path)
+    if not shared_settings then
+        shared_settings = LuaSettings:open(DataStorage:getSettingsDir() .. "/ledger.lua")
+        -- Writes are gathered: a visit to the Ledger can change several
+        -- things (races, what Readest read, the rival's tuning), and each
+        -- flush rewrites the whole file on the Kindle's flash. One write a
+        -- couple of seconds later; at once on sleep, exit and closing.
+        local real_flush = shared_settings.flush
+        local pending = nil
+        shared_settings.flushNow = function(st)
+            if pending then UIManager:unschedule(pending); pending = nil end
+            return real_flush(st)
+        end
+        shared_settings.flush = function(st)
+            if pending then return end
+            pending = function() pending = nil; real_flush(st) end
+            UIManager:scheduleIn(3, pending)
+        end
+    end
     self.settings = shared_settings
     Dispatcher:registerAction("ledger_show", {
         category = "none", event = "ShowLedger", title = _("Reading Ledger"), general = true,
@@ -108,9 +134,16 @@ function Ledger:flushStats()
     end
 end
 
+-- Write any gathered settings now: the device is going to sleep or
+-- KOReader is closing.
+function Ledger:onSuspend() self.settings:flushNow() end
+function Ledger:onFlushSettings() self.settings:flushNow() end
+
 function Ledger:onShow()
     if self._home_pending then
         self._home_pending = false
+        self._from_book = not first_start_show
+        first_start_show = false
         self:show()
     end
 end
@@ -118,6 +151,7 @@ end
 -- A book closing: the file browser that comes back opens the Ledger.
 function Ledger:onCloseDocument()
     back_from_book = true
+    exit_timer = Timing.start()
 end
 
 -- The Ledger is home when KOReader's "Start with" is "ledger" (like
@@ -228,17 +262,20 @@ function Ledger:hardcoverToken()
 end
 
 function Ledger:collect()
+    local t = Timing.start()
     self:flushStats()
+    Timing.lap(t, "collect.flushStats")
     self.race_model = nil   -- (today's pages may have changed)
     local bb = self:bookbridge()
-    local data = Data.collect(self.ui, { download_dir = bb and bb.download_dir })
-    data.pages_today = Data.pagesToday()
+    local data = Data.collect(self.ui, { download_dir = bb and bb.download_dir }, t)
+    Timing.lap(t, "collect.data")
     -- books moved on in Readest since the last look were read elsewhere
     local recs = {}
     for _, rec in ipairs(data.history or {}) do recs[#recs + 1] = rec end
     if data.lead and not data.lead.last_open then recs[#recs + 1] = data.lead end
     for _, rec in ipairs(data.reading or {}) do if not rec.last_open then recs[#recs + 1] = rec end end
     Readest.observe(self.settings, recs)
+    Timing.lap(t, "collect.observe")
     -- books finished since the last look get their race result
     for _, rec in ipairs(data.history or {}) do
         if Data.isFinished(rec) and not Race.result(self.settings, rec) then
@@ -248,6 +285,7 @@ function Ledger:collect()
             end
         end
     end
+    Timing.lap(t, "collect.results")
     return data
 end
 
@@ -256,6 +294,10 @@ end
 -- Settings, switched by the tab bar at the bottom. The book page opens on
 -- top of whichever is showing.
 function Ledger:show()
+    local t = exit_timer or Timing.start()
+    exit_timer = nil
+    Timing.lap(t, "show.start (from book close)")
+    UIManager:nextTick(function() Timing.lap(t, "show.drawn") end)
     if not self.settings:readSetting("onboarded") then
         local Onboard = require("ledger_onboard")
         UIManager:show(Onboard:new{ plugin = self })
@@ -266,10 +308,13 @@ function Ledger:show()
     self:showTab("reading")
     self:refreshRemote(false)
     -- ask Readest for reading done on other devices; redraw when it lands
-    Readest.refresh(self.ui, function()
+    -- (not on the way back from a book: Readest syncs that book itself as it
+    -- closes, so a pull here would only spend Wi-Fi and battery)
+    if not self._from_book then Readest.refresh(self.ui, function()
         self.race_model = nil
         self:redraw()
-    end)
+    end) end
+    self._from_book = false
 end
 
 function Ledger:libraryDirs()
@@ -292,21 +337,45 @@ function Ledger:showTab(id, opts)
         page = Settings:new{ plugin = self }
     else
         id = "reading"
+        local t = Timing.start()
         local data = self:collect()
+        Timing.lap(t, "reading.collect")
+        self:raceModel()
+        Timing.lap(t, "reading.raceModel")
         page = Reading:new{ plugin = self, data = data, cache = self.cache }
+        Timing.lap(t, "reading.build")
         self:fetchCovers(data)
+        Timing.lap(t, "reading.fetchCovers")
     end
     self.page, self.tab = page, id
-    UIManager:show(page, old and "partial" or "flashui")
+    -- (one full flash the first time; after that, coming back from a book
+    -- or switching tabs, a plain update: no black flash)
+    UIManager:show(page, self._shown_once and "ui" or "flashui")
+    self._shown_once = true
     if old and UIManager:isWidgetShown(old) then UIManager:close(old) end
     if id == "library" then
         self:fetchCoversFor(page:visible(), function() page:refreshCovers() end)
     elseif id == "reading" and page.chase then
-        page.chase:runIn()
+        self:runInIfMoved(page)
     end
 end
 
 -- Remote data or covers changed: redraw whatever page is showing.
+-- Play the runners' run-in only when one of them moved since this book's
+-- race was last on screen (each frame is an e-ink update).
+function Ledger:runInIfMoved(page)
+    local chase = page.chase
+    local rec = page.books and page.books[page.index]
+    if not (chase and rec) then return end
+    local key = rec.hash or rec.file
+    local last = shown_positions[key]
+    shown_positions[key] = { you = chase.you_pct or 0, rival = chase.rival_pct or 0 }
+    if last and math.abs(last.you - (chase.you_pct or 0)) < 0.002 and math.abs(last.rival - (chase.rival_pct or 0)) < 0.002 then
+        return
+    end
+    chase:runIn()
+end
+
 function Ledger:redraw()
     local page = self.page
     if not (page and UIManager:isWidgetShown(page)) then return end
@@ -571,14 +640,17 @@ function Ledger:refreshRemote(force)
 
     local token = self:hardcoverToken()
     local covers_dir = Data.coversDir()
+    local fetch_trending = force or not (c.trending and #c.trending > 0)
+        or os.time() - (c.trending_at or 0) >= TRENDING_EVERY
     Bg.run(function()
         local out = {}
         if token then
             local front, err = Net.hardcoverFront(token)
             out.hardcover, out.hardcover_err = front, err
         end
-        -- the Library's trending shelf, with or without a Hardcover key
-        out.trending = Net.openLibraryTrending("weekly", 12, covers_dir)
+        -- the Library's trending shelf, with or without a Hardcover key:
+        -- once a day is plenty for a weekly list
+        if fetch_trending then out.trending = Net.openLibraryTrending("weekly", 12, covers_dir) end
         return out
     end, function(ok, out)
         self._refreshing = false
@@ -752,6 +824,7 @@ function Ledger:showMenu()
 end
 
 function Ledger:onCloseWidget()
+    self.settings:flushNow()
     -- the plugin instance belongs to a FileManager or ReaderUI that is going away
     if self.page and UIManager:isWidgetShown(self.page) then UIManager:close(self.page) end
     if self.book_page and UIManager:isWidgetShown(self.book_page) then UIManager:close(self.book_page) end

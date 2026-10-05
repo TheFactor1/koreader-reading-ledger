@@ -174,9 +174,11 @@ function Chase:onTap(_, ges)
 end
 
 -- Run the pets in from the start line.
+-- (A handful of fast e-ink frames; each costs a screen update, so the page
+-- only runs it when a runner moved since it was last on screen.)
 function Chase:runIn()
     if not self.animate then self.t = 1 return end
-    local frames = 10
+    local frames = 6
     self.t, self.frame = 0, 0
     local i = 0
     local function step()
@@ -185,9 +187,9 @@ function Chase:runIn()
         self.frame = i
         local last = i >= frames
         UIManager:setDirty(self.show_parent or self, last and "ui" or "fast", self.dimen)
-        if not last then UIManager:scheduleIn(0.08, step) end
+        if not last then UIManager:scheduleIn(0.1, step) end
     end
-    UIManager:scheduleIn(0.25, step)
+    UIManager:scheduleIn(0.1, step)
 end
 
 return Chase

@@ -211,20 +211,10 @@ function Data.readestPositions(ui)
     if type(settings) ~= "table" or not settings.user_id or not settings.access_token then
         return nil -- not installed or not signed in
     end
+    -- (straight from Readest's database: its library store builds a full
+    -- object per book, about five times slower on a Kindle)
     local rows
-    -- Readest's own library store when it's loaded (it can fail, e.g. a
-    -- database mid-migration: then read the database directly)
-    local store
-    if ui and ui.readest and ui.readest.getLibraryStore then
-        local sok, st = pcall(ui.readest.getLibraryStore, ui.readest)
-        if sok then store = st else logger.warn("ledger: Readest library store:", st) end
-    end
-    if store and store.listBooks then
-        local ok, r = pcall(store.listBooks, store, {})
-        if ok then rows = r end
-    end
-    if not rows then
-        -- Readest not loaded in this context: read its database directly.
+    do
         local db_path = DataStorage:getSettingsDir() .. "/readest_library.sqlite3"
         if lfs.attributes(db_path, "mode") ~= "file" then return {} end
         local ok, SQ3 = pcall(require, "lua-ljsqlite3/init")
@@ -295,11 +285,15 @@ function Data.readestAhead(rec)
 end
 
 -- Everything the front page shows that's local. Returns a table.
-function Data.collect(ui, opts)
+function Data.collect(ui, opts, t)
     opts = opts or {}
+    local Timing = require("ledger_timing")
     local readest = Data.readestPositions(ui)
+    Timing.lap(t, "data.readest")
     local matches = Data.hardcoverMatches()
+    Timing.lap(t, "data.matches")
     local hist = Data.history(30)
+    Timing.lap(t, "data.history")
     for _, rec in ipairs(hist) do Data.enrich(rec, readest, matches) end
 
     local lead, reading = nil, {}
@@ -314,6 +308,7 @@ function Data.collect(ui, opts)
     if home then dirs[#dirs + 1] = home end
     if opts.download_dir and opts.download_dir ~= home then dirs[#dirs + 1] = opts.download_dir end
     local just_in = Data.justIn(dirs, 21, 6)
+    Timing.lap(t, "data.justIn")
 
     -- No history (cleared, or books opened some other way): books in
     -- progress from the library instead, most recently read first (by when
@@ -342,21 +337,46 @@ function Data.collect(ui, opts)
     }
 end
 
--- Pages turned today, from KOReader's own reading statistics (0 if the
--- statistics plugin has nothing).
-function Data.pagesToday()
+-- Your reading habits over the last `weeks` weeks (default 8), from
+-- KOReader's statistics:
+--   days     { ["2026-10-04"] = pages, ... } for every day you read
+--   hours    [0..23] share of your page turns in each hour (sums to 1)
+--   first    the first day the statistics saw (as "YYYY-MM-DD"), or nil
+-- nil when there are no statistics at all.
+local habits_cache = nil   -- { date, weeks, out }: past days don't change
+
+function Data.readingHabits(weeks, now)
+    weeks = weeks or 8
+    now = now or os.time()
+    local today = os.date("%Y-%m-%d", now)
+    if habits_cache and habits_cache.date == today and habits_cache.weeks == weeks then
+        -- only today can have moved on since: one quick query
+        local out = habits_cache.out
+        if out then
+            local t = os.date("*t", now)
+            local midnight = os.time{ year = t.year, month = t.month, day = t.day, hour = 0 }
+            local n = Data._countSince(midnight)
+            if n then out.days[today] = n > 0 and n or nil end
+        end
+        return out
+    end
+    local out = Data._readingHabits(weeks, now)
+    habits_cache = { date = today, weeks = weeks, out = out }
+    return out
+end
+
+-- Distinct pages turned since a time (nil without statistics).
+function Data._countSince(t0)
     local db_path = DataStorage:getSettingsDir() .. "/statistics.sqlite3"
-    if lfs.attributes(db_path, "mode") ~= "file" then return 0 end
+    if lfs.attributes(db_path, "mode") ~= "file" then return nil end
     local ok, SQ3 = pcall(require, "lua-ljsqlite3/init")
-    if not ok then return 0 end
-    local t = os.date("*t")
-    local midnight = os.time{ year = t.year, month = t.month, day = t.day, hour = 0 }
-    local n = 0
+    if not ok then return nil end
     local dok, db = pcall(SQ3.open, db_path, "ro")
-    if not dok or not db then return 0 end
+    if not dok or not db then return nil end
+    local n
     pcall(function()
         local stmt = db:prepare("SELECT count(DISTINCT id_book || ':' || page) FROM page_stat_data WHERE start_time >= ?")
-        local row = stmt:reset():bind(midnight):step()
+        local row = stmt:reset():bind(t0):step()
         n = row and tonumber(row[1]) or 0
         stmt:close()
     end)
@@ -364,15 +384,7 @@ function Data.pagesToday()
     return n
 end
 
--- Your reading habits over the last `weeks` weeks (default 8), from
--- KOReader's statistics:
---   days     { ["2026-10-04"] = pages, ... } for every day you read
---   hours    [0..23] share of your page turns in each hour (sums to 1)
---   first    the first day the statistics saw (as "YYYY-MM-DD"), or nil
--- nil when there are no statistics at all.
-function Data.readingHabits(weeks, now)
-    weeks = weeks or 8
-    now = now or os.time()
+function Data._readingHabits(weeks, now)
     local db_path = DataStorage:getSettingsDir() .. "/statistics.sqlite3"
     if lfs.attributes(db_path, "mode") ~= "file" then return nil end
     local ok, SQ3 = pcall(require, "lua-ljsqlite3/init")
@@ -411,64 +423,46 @@ function Data.readingHabits(weeks, now)
     return out
 end
 
--- Reading statistics from KOReader's statistics database:
---   pace       seconds per page for this book (nil if not read with stats on)
---   today      pages turned today, all books
---   week       pages turned in the last 7 days, all books
---   streak     consecutive days with reading, up to today (or yesterday)
+-- What KOReader's statistics know about one book (a few quick queries; the
+-- day counts come from Ledger:readingCounts):
+--   pace        seconds per page in this book (nil if none recorded)
+--   all_pace    seconds per page across everything, last 30 days
+--   book_start  first page turn the statistics saw in this book (time)
+--   book_start_pct  where in the book that was (fraction)
+--   book_end    the last page turn (time)
+--   today       0 here; the Currently reading page fills it in
 function Data.readingStats(hash)
-    local out = { today = 0, week = 0, streak = 0 }
+    local out = { today = 0 }
     local db_path = DataStorage:getSettingsDir() .. "/statistics.sqlite3"
     if lfs.attributes(db_path, "mode") ~= "file" then return out end
     local ok, SQ3 = pcall(require, "lua-ljsqlite3/init")
     if not ok then return out end
     local dok, db = pcall(SQ3.open, db_path, "ro")
     if not dok or not db then return out end
-    local t = os.date("*t")
-    local midnight = os.time{ year = t.year, month = t.month, day = t.day, hour = 0 }
-    local function one(sql, ...)
+    local function row(sql, ...)
         local r
         local args = { ... }
         pcall(function()
             local stmt = db:prepare(sql)
-            local row = stmt:reset():bind(unpack(args)):step()
-            r = row and row[1]
+            r = stmt:reset():bind(unpack(args)):step()
             stmt:close()
         end)
-        return r
+        return r or {}
     end
-    out.today = tonumber(one("SELECT count(DISTINCT id_book || ':' || page) FROM page_stat_data WHERE start_time >= ?", midnight)) or 0
-    out.week = tonumber(one("SELECT count(DISTINCT id_book || ':' || page) FROM page_stat_data WHERE start_time >= ?", midnight - 6 * 86400)) or 0
-    -- streak: walk back day by day while there was reading
-    local day_start = midnight
-    if out.today == 0 then day_start = midnight - 86400 end
-    for _ = 1, 365 do
-        local n = tonumber(one("SELECT count(*) FROM page_stat_data WHERE start_time >= ? AND start_time < ?", day_start, day_start + 86400)) or 0
-        if n == 0 then break end
-        out.streak = out.streak + 1
-        day_start = day_start - 86400
-    end
-    -- your pace across everything you've read lately, for a book that has
-    -- no pages of its own yet
-    local all_secs = tonumber(one("SELECT sum(duration) FROM page_stat_data WHERE start_time >= ?", midnight - 30 * 86400))
-    local all_pages = tonumber(one("SELECT count(*) FROM page_stat_data WHERE start_time >= ?", midnight - 30 * 86400))
-    if all_secs and all_pages and all_pages > 0 then out.all_pace = all_secs / all_pages end
-    -- your usual pages per reading day (days you read at all, last 30)
-    local days = tonumber(one("SELECT count(DISTINCT date(start_time, 'unixepoch', 'localtime')) FROM page_stat_data WHERE start_time >= ?", midnight - 30 * 86400))
-    local distinct = tonumber(one("SELECT count(DISTINCT id_book || ':' || page) FROM page_stat_data WHERE start_time >= ?", midnight - 30 * 86400))
-    if days and days > 0 and distinct then out.per_day = distinct / days end
+    local r = row("SELECT sum(duration), count(*) FROM page_stat_data WHERE start_time >= ?", os.time() - 30 * 86400)
+    local secs, pages = tonumber(r[1]), tonumber(r[2])
+    if secs and pages and pages > 0 then out.all_pace = secs / pages end
     if hash then
-        local id = one("SELECT id FROM book WHERE md5 = ?", hash)
+        local id = tonumber(row("SELECT id FROM book WHERE md5 = ?", hash)[1])
         if id then
-            local secs = tonumber(one("SELECT sum(duration) FROM page_stat_data WHERE id_book = ?", id))
-            local pages = tonumber(one("SELECT count(*) FROM page_stat_data WHERE id_book = ?", id))
+            r = row("SELECT sum(duration), count(*), min(start_time), max(start_time + duration) FROM page_stat_data WHERE id_book = ?", id)
+            secs, pages = tonumber(r[1]), tonumber(r[2])
             if secs and pages and pages > 0 then out.pace = secs / pages end
-            out.book_start = tonumber(one("SELECT min(start_time) FROM page_stat_data WHERE id_book = ?", id))
-            out.book_end = tonumber(one("SELECT max(start_time + duration) FROM page_stat_data WHERE id_book = ?", id))
+            out.book_start, out.book_end = tonumber(r[3]), tonumber(r[4])
             -- where you were when the statistics first saw this book (you may
             -- have started it elsewhere), as a fraction of the book
-            local first_page = tonumber(one("SELECT page FROM page_stat_data WHERE id_book = ? ORDER BY start_time LIMIT 1", id))
-            local first_total = tonumber(one("SELECT total_pages FROM page_stat_data WHERE id_book = ? ORDER BY start_time LIMIT 1", id))
+            r = row("SELECT page, total_pages FROM page_stat_data WHERE id_book = ? ORDER BY start_time LIMIT 1", id)
+            local first_page, first_total = tonumber(r[1]), tonumber(r[2])
             if first_page and first_total and first_total > 0 then
                 out.book_start_pct = math.max(0, (first_page - 1) / first_total)
             end
@@ -508,7 +502,17 @@ end
 
 -- The book's description: the sidecar's doc_props, else the cover cache.
 -- HTML tags and entities stripped, whitespace collapsed.
+local desc_cache = {}
+
 function Data.description(rec)
+    local key = rec.file and (rec.file .. ":" .. tostring(rec.last_open)) or nil
+    if key and desc_cache[key] ~= nil then return desc_cache[key] or nil end
+    local d = Data._description(rec)
+    if key then desc_cache[key] = d or false end
+    return d
+end
+
+function Data._description(rec)
     local desc
     if rec.file and DocSettings:hasSidecarFile(rec.file) then
         local ok, ds = pcall(DocSettings.open, DocSettings, rec.file)
