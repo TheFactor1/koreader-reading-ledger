@@ -94,6 +94,10 @@ function Ledger:init()
     })
     self.ui.menu:registerToMainMenu(self)
     registerStartWith()
+    -- (Bookbridge may start after the Ledger: tuck it away once all are up,
+    -- which is still before KOReader first builds its menu)
+    self:tuckBookbridge()
+    UIManager:nextTick(function() self:tuckBookbridge() end)
     -- (the old "home" switch becomes start_with = "ledger")
     if self.settings:readSetting("home") == true and not self:homeOn() then self:setHome(true) end
     if not self.ui.document then
@@ -245,6 +249,74 @@ end
 function Ledger:onShowLedger()
     self:show()
     return true
+end
+
+-- ---------------------------------------------------------------- Bookbridge, inside
+-- Bookbridge stays its own plugin (it updates itself, and works without the
+-- Ledger), but with the Ledger installed it lives inside it: its menu opens
+-- from the Ledger (Settings > Bookbridge, Library > Find), and its entry in
+-- KOReader's own menu is tucked away -- unless "In KOReader's menu too" is
+-- switched on in that Bookbridge menu.
+function Ledger:tuckBookbridge()
+    local bb = self:bookbridge()
+    if not bb or bb._ledger_menu then return end
+    bb._ledger_menu = bb.addToMainMenu   -- (the real one, for the Ledger's own use)
+    local ledger = self
+    bb.addToMainMenu = function(b, menu_items)
+        if ledger.settings:readSetting("bookbridge_in_ko_menu") then
+            return b._ledger_menu(b, menu_items)
+        end
+    end
+end
+
+-- Bookbridge's whole menu, in KOReader's own menu widget, from the Ledger.
+function Ledger:showBookbridgeMenu()
+    local bb = self:bookbridge()
+    if not bb then
+        UIManager:show(InfoMessage:new{ text = _("Bookbridge isn't installed. It comes in the same download as the Reading Ledger."), timeout = 4 })
+        return
+    end
+    local items = {}
+    local ok, err = pcall(bb._ledger_menu or bb.addToMainMenu, bb, items)
+    if not ok or not items.bookbridge then
+        logger.warn("ledger: Bookbridge menu:", err)
+        return
+    end
+    local sub = items.bookbridge.sub_item_table
+    if type(sub) ~= "table" and items.bookbridge.sub_item_table_func then sub = items.bookbridge.sub_item_table_func() end
+    sub = sub or {}
+    -- and one of the Ledger's own, last: whether it also shows in KOReader's menu
+    local tab = { icon = "appbar.tools" }
+    for _, it in ipairs(sub) do tab[#tab + 1] = it end
+    tab[#tab + 1] = {
+        text = _("In KOReader's menu too"),
+        checked_func = function() return self.settings:readSetting("bookbridge_in_ko_menu") and true or false end,
+        callback = function()
+            self.settings:saveSetting("bookbridge_in_ko_menu", not self.settings:readSetting("bookbridge_in_ko_menu") or nil)
+            self.settings:flush()
+            -- (KOReader rebuilds its menu next time it opens)
+            if self.ui and self.ui.menu then self.ui.menu.tab_item_table = nil end
+        end,
+        help_text = _("Bookbridge lives in the Reading Ledger (Settings > Bookbridge). Switch this on to also have it in KOReader's own menu."),
+    }
+    local CenterContainer = require("ui/widget/container/centercontainer")
+    local TouchMenu = require("ui/widget/touchmenu")
+    local container = CenterContainer:new{ ignore = "height", dimen = Device.screen:getSize() }
+    local menu = TouchMenu:new{
+        width = Device.screen:getWidth(),
+        tab_item_table = { tab },
+        show_parent = container,
+    }
+    menu.close_callback = function() UIManager:close(container) end
+    container[1] = menu
+    UIManager:show(container)
+end
+
+-- Bookbridge's search and request, from the Ledger.
+function Ledger:findBook()
+    local bb = self:bookbridge()
+    if bb and bb.startSearch then return bb:startSearch() end
+    self:showBookbridgeMenu()
 end
 
 -- ---------------------------------------------------------------- sources

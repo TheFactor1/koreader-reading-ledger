@@ -348,8 +348,14 @@ function Library:build()
         or SHELF[self.filter] and SHELF[self.filter].label:upper()
         or string.format("%d OF %d", #self.list, total)
     -- KOReader's file browser (folders, file operations): a link up here
-    local files = UI.tappable(UI.text("FILES >", "pix", 11), function() self.plugin:openFiles() end)
-    top[#top + 1] = UI.header(cw, "LIBRARY · " .. count, files)
+    local links = HorizontalGroup:new{ align = "center" }
+    if self.plugin:bookbridge() then
+        -- Bookbridge's search and request, right here
+        links[#links + 1] = UI.tappable(UI.text("FIND", "pix", 11), function() self.plugin:findBook() end)
+        links[#links + 1] = UI.text("   ·   ", "pix", 11, UI.INK2)
+    end
+    links[#links + 1] = UI.tappable(UI.text("FILES >", "pix", 11), function() self.plugin:openFiles() end)
+    top[#top + 1] = UI.header(cw, "LIBRARY · " .. count, links)
 
     local chips = HorizontalGroup:new{}
     for _, f in ipairs(FILTERS) do

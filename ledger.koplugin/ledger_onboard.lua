@@ -194,7 +194,9 @@ function Onboard:build()
             st.readest == "SIGNED IN" and "Reading there counts in the race."
                 or "Sign in from Readest's own menu and reading there counts too.", nil))
         add(checkRow(cw, "Bookbridge", st.bookbridge,
-            "New arrivals, requests, and requesting trending books.", nil))
+            "Search and request books, new arrivals. It lives in the Ledger: Settings > Bookbridge.",
+            p:bookbridge() and UI.button(st.bookbridge == "CONNECTED" and "Open" or "Set up",
+                function() p:showBookbridgeMenu() end, true, 10) or nil))
         add(checkRow(cw, "Hardcover", st.hardcover, "Your yearly goal, paid in fish. Uses your own API key.",
             UI.button(st.hardcover == "ADD KEY" and "Add key" or "Change", function() p:editHardcoverKey() end, true, 10)))
     else

@@ -83,6 +83,22 @@ keeps your record against the rival.
 Still to come: library progress bars (style still being chosen), and a run
 on a real Kindle.
 
+## Install
+
+One download has everything: `tools/make-bundle.sh` builds
+`dist/reading-ledger-<version>.zip` with two folders, `ledger.koplugin` and
+`bookbridge.koplugin`. Copy both into KOReader's `plugins` folder (on a
+Kindle, `/mnt/us/koreader/plugins/`) and restart KOReader; open it from
+Tools > Reading Ledger, or pick "reading ledger" in Settings > Start with.
+
+**Bookbridge lives inside the Ledger.** It's still its own plugin in its own
+folder -- it updates itself, and works without the Ledger -- but with the
+Ledger installed it's reached from there: Settings > Bookbridge opens its
+whole menu (sign-in, search and request, requests, Calibre-Web sync,
+Hardcover, its settings), and the Library's FIND button is its search. Its
+entry in KOReader's own menu is tucked away; "In KOReader's menu too" at the
+bottom of that menu brings it back.
+
 ## Sources (all optional)
 
 | Source | What it adds |
