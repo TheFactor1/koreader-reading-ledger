@@ -537,7 +537,50 @@ end
 -- ---------------------------------------------------------------- covers
 -- A book cover from KOReader's cover cache, fitted to w x h; or a drawn
 -- stand-in with the title when there is none (yet).
+-- Covers, shrunk once to the size they're shown at and kept: KOReader's
+-- cover cache holds them at up to screen size, and shrinking a full-size
+-- cover on every draw is most of what makes a page slow to appear on a
+-- Kindle. The last 40 (a few MB) are kept, oldest out first.
+local cover_cache, cover_order = {}, {}
+local COVER_CACHE_MAX = 40
+
+local function cachedCover(key)
+    return cover_cache[key]
+end
+
+local function keepCover(key, bb)
+    if cover_cache[key] then cover_cache[key]:free() end
+    cover_cache[key] = bb
+    cover_order[#cover_order + 1] = key
+    while #cover_order > COVER_CACHE_MAX do
+        local old = table.remove(cover_order, 1)
+        if cover_cache[old] and old ~= key then cover_cache[old]:free(); cover_cache[old] = nil end
+    end
+end
+
+-- The cover's size inside a w x h frame: filling it when the shapes are
+-- within 10% (invisible on a book cover), letterboxed otherwise.
+local function fitSize(sw, sh, w, h)
+    local sx, sy = w / sw, h / sh
+    if math.abs(sx / sy - 1) <= 0.10 then return w, h end
+    local k = math.min(sx, sy)
+    return math.max(1, math.floor(sw * k + 0.5)), math.max(1, math.floor(sh * k + 0.5))
+end
+
+local function coverFrame(img, w, h)
+    local CenterContainer = require("ui/widget/container/centercontainer")
+    local b = Screen:scaleBySize(2)
+    return FrameContainer:new{ bordersize = b, padding = 0, margin = 0, background = UI.WHITE,
+        CenterContainer:new{ dimen = Geom:new{ w = w - 2 * b, h = h - 2 * b }, img } }
+end
+
 function UI.cover(rec, w, h)
+    local b = Screen:scaleBySize(2)
+    local key = (rec.cover_file or rec.file or "") .. "@" .. w .. "x" .. h
+    local hit = cachedCover(key)
+    if hit then
+        return coverFrame(ImageWidget:new{ image = hit, image_disposable = false }, w, h), true
+    end
     -- a cover image file (trending books, which aren't on the device)
     if rec.cover_file and lfs.attributes(rec.cover_file, "mode") == "file" then
         local b = Screen:scaleBySize(2)
@@ -553,15 +596,13 @@ function UI.cover(rec, w, h)
         if ok and info and info.cover_bb and info.has_cover then
             -- fill the frame (book covers are all roughly 2:3, so a stretch
             -- of up to 10% is invisible); letterbox anything stranger
-            local img = ImageWidget:new{ image = info.cover_bb, image_disposable = true,
-                width = w - 2 * Screen:scaleBySize(2), height = h - 2 * Screen:scaleBySize(2),
-                stretch_limit_percentage = 10 }
-            -- the frame is always exactly w x h, even when an oddly shaped
-            -- cover is letterboxed inside it, so everything under it lines up
-            local CenterContainer = require("ui/widget/container/centercontainer")
-            local b = Screen:scaleBySize(2)
-            return FrameContainer:new{ bordersize = b, padding = 0, margin = 0, background = UI.WHITE,
-                CenterContainer:new{ dimen = Geom:new{ w = w - 2 * b, h = h - 2 * b }, img } }, true
+            -- shrink once, keep it; the frame is always exactly w x h, even
+            -- when an oddly shaped cover is letterboxed inside it
+            local src = info.cover_bb
+            local tw, th = fitSize(src:getWidth(), src:getHeight(), w - 2 * b, h - 2 * b)
+            local scaled = RenderImage:scaleBlitBuffer(src, tw, th, true)
+            keepCover(key, scaled)
+            return coverFrame(ImageWidget:new{ image = scaled, image_disposable = false }, w, h), true
         end
     end
     -- (FrameContainer's width/height don't take part in layout, so the

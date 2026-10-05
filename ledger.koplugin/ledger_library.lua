@@ -426,4 +426,11 @@ function Library:visible()
     return out
 end
 
+-- (timing: how long drawing the page takes, with the timing log on)
+function Library:paintTo(bb, x, y)
+    local t = require("ledger_timing").start()
+    InputContainer.paintTo(self, bb, x, y)
+    require("ledger_timing").lap(t, "paint.library")
+end
+
 return Library
