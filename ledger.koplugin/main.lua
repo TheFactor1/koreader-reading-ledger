@@ -930,22 +930,26 @@ end
 
 function Ledger:editHardcoverKey()
     local dialog
+    local rows = { {
+        { text = _("Cancel"), id = "close", callback = function() UIManager:close(dialog) end },
+        { text = _("Save"), is_enter_default = true, callback = function()
+            local key = dialog:getInputText():gsub("%s+", "")
+            UIManager:close(dialog)
+            self.settings:saveSetting("hardcover_token", key ~= "" and key or nil)
+            self.settings:flush()
+            self.cache = self.cache or {}
+            self.cache.hardcover_rejected = nil
+            self:refreshRemote(true)
+        end },
+    } }
+    -- (with Bookbridge here: paste the key on a phone instead of typing it)
+    local bb = self:bookbridge()
+    if bb and bb.phoneButtonRow then table.insert(rows, 1, bb:phoneButtonRow()) end
     dialog = InputDialog:new{
         title = _("Hardcover API key"),
         description = _("From hardcover.app/account/api. Your shelves, lists and yearly goal appear on the front page."),
         input = self.settings:readSetting("hardcover_token") or "",
-        buttons = { {
-            { text = _("Cancel"), id = "close", callback = function() UIManager:close(dialog) end },
-            { text = _("Save"), is_enter_default = true, callback = function()
-                local key = dialog:getInputText():gsub("%s+", "")
-                UIManager:close(dialog)
-                self.settings:saveSetting("hardcover_token", key ~= "" and key or nil)
-                self.settings:flush()
-                self.cache = self.cache or {}
-                self.cache.hardcover_rejected = nil
-                self:refreshRemote(true)
-            end },
-        } },
+        buttons = rows,
     }
     UIManager:show(dialog)
     dialog:onShowKeyboard()
