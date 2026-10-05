@@ -33,6 +33,7 @@ function Book:init()
     if Device:hasKeys() then
         self.key_events = { Close = { { Device.input.group.Back } } }
     end
+    UI.addTopMenu(self)
     self[1] = self:build()
 end
 

@@ -369,8 +369,9 @@ function Race.lines(p, rec, race, cache)
     local t = {}
     -- pages when the book's length is known, else percent
     local function at(pages, pct)
-        if race.pages_known then return string.format("p. %d", pages) end
-        return string.format("%d%%", math.floor(pct * 100 + 0.5))
+        local percent = string.format("%d%%", math.floor(pct * 100 + 0.5))
+        if race.pages_known then return string.format("p. %d · %s", pages, percent) end
+        return percent
     end
     if race.pages_known then
         t.you_says = string.format("%s: I'm on page %d of %d.", you, math.max(1, race.you_pages), race.total)

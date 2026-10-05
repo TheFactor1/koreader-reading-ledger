@@ -50,6 +50,7 @@ function Library:init()
     self.ges_events = {
         Swipe = { require("ui/gesturerange"):new{ ges = "swipe", range = self.dimen } },
     }
+    UI.addTopMenu(self)
     self:refilter()
     self[1] = self:build()
 end
@@ -283,9 +284,11 @@ function Library:tile(rec, w, h, text_w)
     -- every tile takes its column's full width, so the grid stays aligned
     local LeftContainer = require("ui/widget/container/leftcontainer")
     local cell = LeftContainer:new{ dimen = Geom:new{ w = text_w, h = vg:getSize().h }, vg }
-    return UI.tappable(cell, function()
-        if rec.trending then self.plugin:showTrending(rec) else self.plugin:showBook(rec) end
-    end)
+    -- tap: open the book; hold: its page (the race, details, Readest)
+    if rec.trending then
+        return UI.tappable(cell, function() self.plugin:showTrending(rec) end)
+    end
+    return UI.tappable(cell, function() self.plugin:openBook(rec) end, function() self.plugin:showBook(rec) end)
 end
 
 -- Height of everything under a cover, measured from the real widgets.
@@ -307,9 +310,11 @@ function Library:build()
     local top = VerticalGroup:new{ align = "left" }
     local total = #(self.books or {})
     local count = self.filter == "all" and string.format("%d BOOKS", total)
-        or self.filter == "trending" and "THIS WEEK · OPEN LIBRARY"
+        or self.filter == "trending" and "TRENDING THIS WEEK"
         or string.format("%d OF %d", #self.list, total)
-    top[#top + 1] = UI.header(cw, "LIBRARY", UI.text(count, "pix", 11, UI.INK2))
+    -- KOReader's file browser (folders, file operations): a link up here
+    local files = UI.tappable(UI.text("FILES >", "pix", 11), function() self.plugin:openFiles() end)
+    top[#top + 1] = UI.header(cw, "LIBRARY · " .. count, files)
 
     local chips = HorizontalGroup:new{}
     for _, f in ipairs(FILTERS) do
@@ -323,31 +328,39 @@ function Library:build()
     top[#top + 1] = UI.spread(cw, chips, sort_btn)
     top[#top + 1] = UI.vspace(s(12))
 
-    -- footer first, so the grid knows how much room it has
+    -- footer first, so the grid knows how much room it has: the tabs, and
+    -- the paging row only when there's more than one page
     local tabs = UI.tabBar(cw, "library", function(id) self.plugin:showTab(id) end)
-    local nav_h = UI.button("Files", nil, true, 10):getSize().h
-    local foot_h = nav_h + s(12) + tabs:getSize().h
-    -- four across on anything Paperwhite-sized or bigger, three on small screens
-    local cols = cw >= s(420) and 4 or 3
-    local gap = s(12)
-    local tile_w = math.floor((cw - (cols - 1) * gap) / cols)
-    local text_h = self:captionHeight(tile_w)
-    local grid_h = H - 2 * m - top:getSize().h - foot_h
-    -- as many full-width rows as fit; if most of another row is left over,
-    -- shrink the covers so it fits too
-    -- covers may shrink to two-thirds of the column's natural height to fit a row more
-    local min_row = math.floor(tile_w * 1.45 * 0.66) + s(4) + text_h + gap
-    local rows = math.max(1, math.floor(grid_h / min_row))
-    local cover_h = math.min(math.floor(tile_w * 1.45), math.floor(grid_h / rows) - s(4) - text_h - gap)
-    local cover_w = math.min(tile_w, math.floor(cover_h / 1.45))
-    -- when the covers shrank, spread the columns out so the last one still
-    -- ends at the right margin (the leftover pixels go to the gaps, left first)
-    local col_x = {}
-    local spare = cw - cols * cover_w
-    for c = 0, cols - 1 do
-        col_x[c] = c * cover_w + math.floor(spare * c / (cols - 1))
+    local nav_h = UI.button("Next >", nil, true, 10):getSize().h + s(12)
+    local foot_h = tabs:getSize().h
+    local function layout(with_nav)
+        -- four across on anything Paperwhite-sized or bigger, three on small screens
+        local cols = cw >= s(420) and 4 or 3
+        local gap = s(12)
+        local tile_w = math.floor((cw - (cols - 1) * gap) / cols)
+        local text_h = self:captionHeight(tile_w)
+        local grid_h = H - 2 * m - top:getSize().h - foot_h - (with_nav and nav_h or 0)
+        -- as many full-width rows as fit; if most of another row is left over,
+        -- shrink the covers so it fits too
+        -- covers may shrink to two-thirds of the column's natural height to fit a row more
+        local min_row = math.floor(tile_w * 1.45 * 0.66) + s(4) + text_h + gap
+        local rows = math.max(1, math.floor(grid_h / min_row))
+        local cover_h = math.min(math.floor(tile_w * 1.45), math.floor(grid_h / rows) - s(4) - text_h - gap)
+        local cover_w = math.min(tile_w, math.floor(cover_h / 1.45))
+        -- when the covers shrank, spread the columns out so the last one still
+        -- ends at the right margin (the leftover pixels go to the gaps, left first)
+        local col_x = {}
+        local spare = cw - cols * cover_w
+        for c = 0, cols - 1 do
+            col_x[c] = c * cover_w + math.floor(spare * c / (cols - 1))
+        end
+        local per_page = rows * cols
+        return cols, gap, text_h, grid_h, rows, cover_h, cover_w, col_x, per_page
     end
-    local per_page = rows * cols
+    local cols, gap, text_h, grid_h, rows, cover_h, cover_w, col_x, per_page = layout(false)
+    if #self.list > per_page then
+        cols, gap, text_h, grid_h, rows, cover_h, cover_w, col_x, per_page = layout(true)
+    end
     self.per_page = per_page
     self.pages = math.max(1, math.ceil(#self.list / per_page))
     if self.page > self.pages then self.page = self.pages end
@@ -381,21 +394,21 @@ function Library:build()
         grid[#grid + 1] = UI.text(empty[self.filter] or "", "body", 13, UI.INK2, cw)
     end
 
-    -- paging only when there is more than one page
-    local nav
+    -- paging, centred, only when there is more than one page
+    local foot = VerticalGroup:new{ align = "left" }
     if self.pages > 1 then
-        nav = HorizontalGroup:new{ align = "center",
+        local CenterContainer = require("ui/widget/container/centercontainer")
+        local nav = HorizontalGroup:new{ align = "center",
             UI.button("< Prev", function() self:onPrevPage() end, true, 10),
-            UI.hspace(s(10)),
+            UI.hspace(s(14)),
             UI.text(string.format("PAGE %d/%d", self.page, self.pages), "pix", 10),
-            UI.hspace(s(10)),
+            UI.hspace(s(14)),
             UI.button("Next >", function() self:onNextPage() end, true, 10),
         }
-    else
-        nav = UI.hspace(0)
+        foot[#foot + 1] = CenterContainer:new{ dimen = Geom:new{ w = cw, h = nav:getSize().h }, nav }
+        foot[#foot + 1] = UI.vspace(s(12))
     end
-    local files = UI.button("Files", function() self.plugin:openFiles() end, true, 10)
-    local foot = VerticalGroup:new{ align = "left", UI.spread(cw, nav, files), UI.vspace(s(12)), tabs }
+    foot[#foot + 1] = tabs
 
     local used = top:getSize().h + grid:getSize().h + foot:getSize().h + 2 * m
     return FrameContainer:new{

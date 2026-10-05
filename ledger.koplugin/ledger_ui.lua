@@ -56,7 +56,12 @@ local FACES = {
 }
 local face_cache = {}
 
+-- Everything a size bigger than KOReader's own defaults: the Ledger is read
+-- at arm's length on e-ink.
+UI.TEXT_SCALE = 1.15
+
 function UI.face(kind, size)
+    size = math.floor(size * UI.TEXT_SCALE + 0.5)
     local key = kind .. size
     if face_cache[key] then return face_cache[key] end
     local spec = FACES[kind] or FACES.body
@@ -95,7 +100,9 @@ function UI.sprite(name, k)
         if k > 1 then src:free() end
         sprite_cache[key] = bb
     end
-    return ImageWidget:new{ image = bb, image_disposable = false, alpha = true }
+    -- (in night mode the sprites invert with everything else: kept "original"
+    -- their transparent edges would show as white boxes)
+    return ImageWidget:new{ image = bb, image_disposable = false, alpha = true, original_in_nightmode = false }
 end
 
 -- The whole-number scale that makes a sprite about `target_w` pixels wide.
@@ -224,6 +231,28 @@ function UI.header(width, left, right)
     local line = UI.spread(width, left, right)
     table.insert(line, 1, VerticalSpan:new{ width = h })
     return VerticalGroup:new{ align = "left", line, VerticalSpan:new{ width = Screen:scaleBySize(12) } }
+end
+
+-- ---------------------------------------------------------------- KOReader's menu
+-- A tap on the top strip of a Ledger page (or a swipe down from it) opens
+-- KOReader's own menu, as it does everywhere else in KOReader. Buttons up
+-- there still get their taps first: the page only sees taps nothing used.
+function UI.addTopMenu(page)
+    local W, H = Screen:getWidth(), Screen:getHeight()
+    local band = Geom:new{ x = 0, y = 0, w = W, h = math.floor(H / 10) }
+    page.ges_events = page.ges_events or {}
+    page.ges_events.TopMenuTap = { GestureRange:new{ ges = "tap", range = band } }
+    page.ges_events.TopMenuSwipe = { GestureRange:new{ ges = "swipe", range = band } }
+    page.onTopMenuTap = function(self)
+        self.plugin:showKOMenu()
+        return true
+    end
+    page.onTopMenuSwipe = function(self, _, ges)
+        if ges and ges.direction == "south" then
+            self.plugin:showKOMenu()
+            return true
+        end
+    end
 end
 
 -- ---------------------------------------------------------------- tab bar

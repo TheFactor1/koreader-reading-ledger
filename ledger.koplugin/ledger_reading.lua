@@ -54,6 +54,7 @@ function Reading:init()
         }
     end
     self.ges_events = { Swipe = { GestureRange:new{ ges = "swipe", range = self.dimen } } }
+    UI.addTopMenu(self)
     self.books = {}
     local d = self.data or {}
     if d.lead then self.books[#self.books + 1] = d.lead end

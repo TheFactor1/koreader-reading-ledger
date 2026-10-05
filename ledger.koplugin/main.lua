@@ -51,6 +51,7 @@ local shared_settings = nil
 -- and each time a book is closed -- but not when the file browser is merely
 -- rebuilt (a setting changed, Files chosen from the Ledger).
 local first_start = true
+local registerStartWith   -- (below, with the home screen)
 local back_from_book = false
 
 local Ledger = WidgetContainer:extend{
@@ -66,6 +67,9 @@ function Ledger:init()
         category = "none", event = "ShowLedger", title = _("Reading Ledger"), general = true,
     })
     self.ui.menu:registerToMainMenu(self)
+    registerStartWith()
+    -- (the old "home" switch becomes start_with = "ledger")
+    if self.settings:readSetting("home") == true and not self:homeOn() then self:setHome(true) end
     if not self.ui.document then
         -- the file browser: show the Ledger on top when it's the home screen
         local show_now = (first_start or back_from_book) and self:homeOn()
@@ -80,36 +84,87 @@ function Ledger:init()
     end
 end
 
+-- KOReader's own menu (the file browser's, or the reader's over a book).
+function Ledger:showKOMenu()
+    local menu = self.ui and self.ui.menu
+    if menu and menu.onShowMenu then menu:onShowMenu() end
+end
+
+-- KOReader's statistics keep the pages of the book that's open in memory
+-- until it's closed, the device sleeps or 50 pages go by; write them out
+-- now so today counts what you just read.
+function Ledger:flushStats()
+    local ok, ReaderUI = pcall(require, "apps/reader/readerui")
+    local reader = ok and ReaderUI and ReaderUI.instance
+    local stats = reader and reader.statistics
+    if stats and stats.insertDB and stats.settings and stats.settings.is_enabled then
+        local fok, err = pcall(stats.insertDB, stats)
+        if not fok then logger.warn("ledger: statistics flush failed:", err) end
+    end
+end
+
 -- A book closing: the file browser that comes back opens the Ledger.
 function Ledger:onCloseDocument()
     back_from_book = true
 end
 
+-- The Ledger is home when KOReader's "Start with" is "ledger" (like
+-- Bookshelf's "bookshelf"): KOReader itself then starts in the file browser,
+-- which the Ledger covers. What it was before is kept for turning it off.
 function Ledger:homeOn()
-    return self.settings:readSetting("home") == true
+    return G_reader_settings:readSetting("start_with") == "ledger"
 end
 
 function Ledger:setHome(on)
-    on = on and true or false
-    if on == self:homeOn() and self.settings:has("home") then return end
-    self.settings:saveSetting("home", on)
-    -- Another home screen that takes over at startup (Bookshelf sets
-    -- start_with = "bookshelf") would fight the Ledger for the file
-    -- browser: start in the file browser instead while the Ledger is home,
-    -- and put it back when it isn't. Bookshelf stays installed.
     local start_with = G_reader_settings:readSetting("start_with")
-    if on and start_with == "bookshelf" then
-        self.settings:saveSetting("start_with_before", start_with)
-        G_reader_settings:saveSetting("start_with", "filemanager")
-        G_reader_settings:flush()
-    elseif not on and self.settings:readSetting("start_with_before") then
-        if start_with == "filemanager" then
-            G_reader_settings:saveSetting("start_with", self.settings:readSetting("start_with_before"))
-            G_reader_settings:flush()
-        end
+    if on and start_with ~= "ledger" then
+        self.settings:saveSetting("start_with_before", start_with or "filemanager")
+        G_reader_settings:saveSetting("start_with", "ledger")
+    elseif not on and start_with == "ledger" then
+        G_reader_settings:saveSetting("start_with", self.settings:readSetting("start_with_before") or "filemanager")
         self.settings:delSetting("start_with_before")
     end
+    self.settings:delSetting("home")   -- (the old switch, before start_with)
+    G_reader_settings:flush()
     self.settings:flush()
+end
+
+-- "Reading Ledger" in KOReader's own Settings > Start with menu, next to
+-- file browser, history, ... (and Bookshelf's entry, which it patches the
+-- same way). Patched once, on the class.
+registerStartWith = function()
+    local ok, FMMenu = pcall(require, "apps/filemanager/filemanagermenu")
+    if not ok or type(FMMenu) ~= "table" or type(FMMenu.getStartWithMenuTable) ~= "function" then return end
+    if FMMenu._ledger_patched then return end
+    FMMenu._ledger_patched = true
+    local orig = FMMenu.getStartWithMenuTable
+    FMMenu.getStartWithMenuTable = function(fm_menu, ...)
+        local result = orig(fm_menu, ...)
+        if type(result) ~= "table" or type(result.sub_item_table) ~= "table" then return result end
+        for _i, item in ipairs(result.sub_item_table) do
+            if item._ledger then return result end
+        end
+        table.insert(result.sub_item_table, {
+            _ledger = true,
+            text = _("reading ledger"),
+            radio = true,
+            checked_func = function() return G_reader_settings:readSetting("start_with") == "ledger" end,
+            callback = function(touchmenu)
+                local ledger = fm_menu.ui and fm_menu.ui.ledger
+                if ledger then ledger:setHome(true) else G_reader_settings:saveSetting("start_with", "ledger") end
+                if touchmenu and touchmenu.closeMenu then touchmenu:closeMenu() end
+                if ledger then ledger:show() end
+            end,
+        })
+        local orig_text = result.text_func
+        result.text_func = function()
+            if G_reader_settings:readSetting("start_with") == "ledger" then
+                return _("Start with: reading ledger")
+            end
+            return orig_text and orig_text() or ""
+        end
+        return result
+    end
 end
 
 function Ledger:toggleHome()
@@ -161,6 +216,7 @@ function Ledger:hardcoverToken()
 end
 
 function Ledger:collect()
+    self:flushStats()
     local bb = self:bookbridge()
     local data = Data.collect(self.ui, { download_dir = bb and bb.download_dir })
     data.pages_today = Data.pagesToday()
