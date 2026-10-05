@@ -581,6 +581,29 @@ function Ledger:chooseAnimal(which)
     UIManager:show(dialog)
 end
 
+-- How the race looks (ledger_chase.lua: Chase.STYLES).
+function Ledger:raceStyle()
+    return self.settings:readSetting("race_style") or "field"
+end
+
+function Ledger:chooseRaceStyle()
+    local Chase = require("ledger_chase")
+    local ButtonDialog = require("ui/widget/buttondialog")
+    local dlg
+    local buttons = {}
+    for _, st in ipairs(Chase.STYLES) do
+        buttons[#buttons + 1] = { { text = (st.id == self:raceStyle() and "✓ " or "") .. st.label, align = "left",
+            callback = function()
+                UIManager:close(dlg)
+                self.settings:saveSetting("race_style", st.id)
+                self.settings:flush()
+                self:redraw()
+            end } }
+    end
+    dlg = ButtonDialog:new{ title = _("The race's look"), buttons = buttons }
+    UIManager:show(dlg)
+end
+
 function Ledger:animationsOn()
     return self.settings:readSetting("animations") ~= false
 end

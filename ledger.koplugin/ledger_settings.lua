@@ -40,8 +40,9 @@ function Settings:update()
 end
 
 -- One row: an optional pet icon, the name and a hint, the value on the right.
-local function row(cw, icon, label, hint, value, callback)
+local function row(cw, icon, label, hint, value, callback, pad)
     local function s(n) return Screen:scaleBySize(n) end
+    pad = pad or s(10)
     local left = HorizontalGroup:new{ align = "center" }
     local icon_w = s(30)
     if icon then
@@ -61,12 +62,19 @@ local function row(cw, icon, label, hint, value, callback)
     local val = value == "›" and UI.text("›", "bold", 16)
         or UI.text(value or "", "pix", 10, UI.BLACK, cw - left:getSize().w - s(20))
     local line = VerticalGroup:new{ align = "left",
-        UI.vspace(s(10)), UI.spread(cw, left, val), UI.vspace(s(10)), UI.rule(cw, s(1), UI.INK3) }
+        UI.vspace(pad), UI.spread(cw, left, val), UI.vspace(pad), UI.rule(cw, s(1), UI.INK3) }
     return callback and UI.tappable(line, callback) or line
 end
 
-function Settings:build()
+function Settings:build(tight)
     local function s(n) return Screen:scaleBySize(n) end
+    -- (rows are spaced out, or packed closer when they wouldn't all fit)
+    local pad = tight and s(3) or s(10)
+    local row = function(...)
+        local args = { ... }
+        args[7] = pad
+        return row(unpack(args, 1, 7))
+    end
     local W, H = self.dimen.w, self.dimen.h
     local m = math.floor(W * 0.045)
     local cw = W - 2 * m
@@ -91,6 +99,11 @@ function Settings:build()
     add(row(cw, nil, "Bookbridge", "Requests, new arrivals, search", st.bookbridge))
     add(row(cw, nil, "Open on start", "When KOReader starts and when you close a book",
         p:homeOn() and "ON" or "OFF", function() p:toggleHome() end))
+    local Chase = require("ledger_chase")
+    local look = "FIELD"
+    for _, st in ipairs(Chase.STYLES) do if st.id == p:raceStyle() then look = st.label:upper() end end
+    add(row(cw, nil, "Race look", "Field, running track, trail, bookshelves, scoreboard", look,
+        function() p:chooseRaceStyle() end))
     add(row(cw, nil, "Animations", "The runners sprint in when the page opens",
         p:animationsOn() and "ON" or "OFF", function() p:toggleAnimations() end))
     add(row(cw, nil, "Refresh now", "Hardcover, the trending shelf and requests", "›", function() p:refreshRemote(true) end))
@@ -98,6 +111,7 @@ function Settings:build()
 
     local foot = UI.tabBar(cw, "settings", function(id) p:showTab(id) end)
     local used = main:getSize().h + foot:getSize().h + 2 * m
+    if used > H and not tight then return self:build(true) end
     return FrameContainer:new{
         background = UI.WHITE, bordersize = 0, margin = 0, padding = m,
         VerticalGroup:new{ align = "left", main, UI.vspace(math.max(0, H - used)), foot },

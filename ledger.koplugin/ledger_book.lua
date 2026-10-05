@@ -123,7 +123,7 @@ function Book:build()
     local lines = Race.lines(plugin, rec, race, plugin.cache)
     local chase = Chase:new{
         width = cw, height = math.floor(H * 0.16),
-        you = plugin:runner(), rival = plugin:rival(),
+        you = plugin:runner(), rival = plugin:rival(), style = plugin:raceStyle(),
         you_pct = race.you_pct, rival_pct = race.rival_pct, napping = race.napping,
         you_says = lines.you_says, rival_says = lines.rival_says, fish_says = lines.fish_says,
         animate = false, t = 1,
