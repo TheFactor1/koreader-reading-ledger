@@ -17,6 +17,11 @@ Two ways it gets here, used together:
     sync already brought in for that stretch are taken off, so nothing counts
     twice whichever way it arrived.
 
+This device's own progress is watched the same way (dev, dev_days): pages
+the book moved here count even when KOReader's statistics skipped them
+(they ignore pages turned in under 5 seconds), and each day takes the larger
+of the two.
+
 Kept in the Ledger's settings as "readest_read": { log = { [hash] = { pct,
 at, dev } }, gains = { { hash, t0, t1, lo, hi, pages }, ... } } (lo..hi:
 the stretch of the book read elsewhere, as fractions; pages: book length).
@@ -139,6 +144,8 @@ local function state(store)
     local st = store:readSetting("readest_read") or {}
     st.log = st.log or {}
     st.gains = st.gains or {}
+    st.dev = st.dev or {}          -- this device's furthest place per book
+    st.dev_days = st.dev_days or {} -- pages moved on this device, per day
     return st
 end
 
@@ -152,7 +159,36 @@ function R.observe(store, recs, now)
     now = now or os.time()
     local st = state(store)
     local changed = false
+    local today = os.date("%Y-%m-%d", now)
     for _, rec in ipairs(recs or {}) do
+        -- How far the book moved on THIS device since the last look. KOReader's
+        -- statistics skip pages turned in under 5 seconds (and anything read
+        -- while they're off), so this counts what the position says -- but not
+        -- a jump to where Readest already was (that's counted as Readest's).
+        local key = rec.hash or rec.file
+        local dev_now = rec.pct
+        if key and dev_now then
+            local d = st.dev[key]
+            local rd_now = rec.readest and rec.readest.pct or 0
+            if not d then
+                st.dev[key] = { pct = dev_now, rd = rd_now }
+                changed = true
+            else
+                if dev_now > d.pct + 0.0005 then
+                    -- forward from where it was last seen; the stretch up to
+                    -- Readest's place, when this device has reached it, was a
+                    -- jump there (Readest's pages, counted as Readest's)
+                    local from = d.pct
+                    if dev_now >= (d.rd or 0) then from = math.max(from, d.rd or 0) end
+                    local pages = (rec.pages and rec.pages > 0) and rec.pages or 300
+                    local moved = math.floor((dev_now - from) * pages + 0.5)
+                    if moved > 0 then st.dev_days[today] = (st.dev_days[today] or 0) + moved end
+                end
+                -- (wherever it is now, backwards too: re-reading counts)
+                if math.abs(dev_now - d.pct) > 0.0005 then d.pct = dev_now; changed = true end
+                if rd_now > (d.rd or 0) then d.rd = rd_now; changed = true end
+            end
+        end
         local r = rec.readest
         if rec.hash and r and r.pct and r.updated_at then
             local dev = rec.pct or 0
@@ -181,6 +217,8 @@ function R.observe(store, recs, now)
         local kept = {}
         for _, g in ipairs(st.gains) do if g.t1 >= keep then kept[#kept + 1] = g end end
         st.gains = kept
+        local keep_day = os.date("%Y-%m-%d", keep)
+        for d in pairs(st.dev_days) do if d < keep_day then st.dev_days[d] = nil end end
         store:saveSetting("readest_read", st)
         store:flush()
         R.forget()
@@ -225,8 +263,10 @@ end
 -- Folds Readest's days and hours into Data.readingHabits() output (or
 -- makes one, when this device has no statistics).
 function R.mergeHabits(habits, store)
-    local s = store and tally(store)
-    if not s or not next(s.days) then return habits end
+    if not store then return habits end
+    local s = tally(store)
+    local dev_days = state(store).dev_days
+    if not next(s.days) and not next(dev_days) then return habits end
     habits = habits or { days = {}, hours = {} }
     local by_hour, turns = {}, 0
     -- habits.hours are shares; weigh them back up by this device's pages
@@ -236,6 +276,12 @@ function R.mergeHabits(habits, store)
         by_hour[h] = (habits.hours[h] or 0) * own
         turns = turns + by_hour[h]
     end
+    -- this device: whichever saw more, the statistics or the position
+    for d, p in pairs(dev_days) do
+        if p > (habits.days[d] or 0) then habits.days[d] = p end
+        if not habits.first or d < habits.first then habits.first = d end
+    end
+    -- plus what was read in Readest elsewhere
     for d, p in pairs(s.days) do
         habits.days[d] = (habits.days[d] or 0) + p
         if not habits.first or d < habits.first then habits.first = d end
@@ -246,6 +292,8 @@ function R.mergeHabits(habits, store)
     end
     if turns > 0 then
         for h = 0, 23 do habits.hours[h] = (by_hour[h] or 0) / turns end
+    elseif not next(habits.hours) then
+        habits.hours = nil   -- (no hours known: the model assumes daytime)
     end
     return habits
 end

@@ -75,9 +75,14 @@ function Ledger:init()
         local show_now = (first_start or back_from_book) and self:homeOn()
         first_start, back_from_book = false, false
         if show_now then
+            -- KOReader tells the file browser's plugins it's being shown
+            -- before drawing it: open then, so it never flashes up first
+            -- (onShow below). A tick later as a fallback.
+            self._home_pending = true
             UIManager:nextTick(function()
-                if self.ui and not self.ui.tearing_down and not (self.page and UIManager:isWidgetShown(self.page)) then
-                    self:show()
+                if self._home_pending then
+                    self._home_pending = false
+                    if not (self.page and UIManager:isWidgetShown(self.page)) then self:show() end
                 end
             end)
         end
@@ -100,6 +105,13 @@ function Ledger:flushStats()
     if stats and stats.insertDB and stats.settings and stats.settings.is_enabled then
         local fok, err = pcall(stats.insertDB, stats)
         if not fok then logger.warn("ledger: statistics flush failed:", err) end
+    end
+end
+
+function Ledger:onShow()
+    if self._home_pending then
+        self._home_pending = false
+        self:show()
     end
 end
 
@@ -217,6 +229,7 @@ end
 
 function Ledger:collect()
     self:flushStats()
+    self.race_model = nil   -- (today's pages may have changed)
     local bb = self:bookbridge()
     local data = Data.collect(self.ui, { download_dir = bb and bb.download_dir })
     data.pages_today = Data.pagesToday()
@@ -385,6 +398,23 @@ function Ledger:raceModel()
         Race.settle(self.settings, self.race_model, self:rival())
     end
     return self.race_model
+end
+
+-- Pages read today, in the last 7 days, and the streak of days with reading:
+-- this device (the larger of its statistics and how far books moved) plus
+-- Readest elsewhere.
+function Ledger:readingCounts()
+    local days = (self:raceModel().habits or {}).days or {}
+    local now = os.time()
+    local today = os.date("%Y-%m-%d", now)
+    local week = 0
+    for i = 0, 6 do week = week + (days[os.date("%Y-%m-%d", now - i * 86400)] or 0) end
+    local streak, i = 0, (days[today] or 0) > 0 and 0 or 1
+    while i < 60 and (days[os.date("%Y-%m-%d", now - i * 86400)] or 0) > 0 do
+        streak = streak + 1
+        i = i + 1
+    end
+    return days[today] or 0, week, streak
 end
 
 -- Pages read in Readest (on other devices) today, and in the last 7 days.

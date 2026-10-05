@@ -214,7 +214,7 @@ function Reading:build(squeeze)
 
         -- the race (today counts pages read in Readest too)
         local rd_today = plugin:readestPages()
-        local rstats = setmetatable({ today = (stats.today or 0) + rd_today }, { __index = stats })
+        local rstats = setmetatable({ today = (plugin:readingCounts()) }, { __index = stats })
         local race = Race.state(rec, rstats, plugin.settings, plugin:runner(), plugin:rival(), plugin:raceModel())
         race.today_readest = rd_today
         local lines = Race.lines(plugin, rec, race, self.cache)
@@ -236,16 +236,15 @@ function Reading:build(squeeze)
     end
 
     -- stats
-    local st = self.stats or Data.readingStats(nil)
-    local rd_today, rd_week = plugin:readestPages()
+    local today_n, week_n, streak_n = plugin:readingCounts()
     local won, lost = Race.tally(plugin.settings, plugin:rival())
     local bw = math.floor(cw / 4)
     add(UI.rule(cw, s(2)))
     add(UI.vspace(s(8)))
     add(HorizontalGroup:new{ align = "center",
-        statBlock("Today", tostring(st.today + rd_today) .. " p", bw),
-        statBlock("This week", tostring(st.week + rd_week) .. " p", bw),
-        statBlock("Streak", st.streak .. (st.streak == 1 and " day" or " days"), bw),
+        statBlock("Today", tostring(today_n) .. " p", bw),
+        statBlock("This week", tostring(week_n) .. " p", bw),
+        statBlock("Streak", streak_n .. (streak_n == 1 and " day" or " days"), bw),
         statBlock("vs " .. plugin:petName(plugin:rival()), string.format("%d-%d", won, lost), cw - 3 * bw),
     })
     add(UI.vspace(s(8)))
