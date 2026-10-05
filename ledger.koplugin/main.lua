@@ -47,6 +47,12 @@ local pending_readest_jump = nil
 -- would overwrite each other's races, tuning and choices on flush.
 local shared_settings = nil
 
+-- Home screen: the Ledger opens over the file browser when KOReader starts
+-- and each time a book is closed -- but not when the file browser is merely
+-- rebuilt (a setting changed, Files chosen from the Ledger).
+local first_start = true
+local back_from_book = false
+
 local Ledger = WidgetContainer:extend{
     name = "ledger",
     is_doc_only = false,
@@ -60,6 +66,51 @@ function Ledger:init()
         category = "none", event = "ShowLedger", title = _("Reading Ledger"), general = true,
     })
     self.ui.menu:registerToMainMenu(self)
+    if not self.ui.document then
+        -- the file browser: show the Ledger on top when it's the home screen
+        local show_now = (first_start or back_from_book) and self:homeOn()
+        first_start, back_from_book = false, false
+        if show_now then
+            UIManager:nextTick(function()
+                if self.ui and not self.ui.tearing_down and not (self.page and UIManager:isWidgetShown(self.page)) then
+                    self:show()
+                end
+            end)
+        end
+    end
+end
+
+-- A book closing: the file browser that comes back opens the Ledger.
+function Ledger:onCloseDocument()
+    back_from_book = true
+end
+
+function Ledger:homeOn()
+    return self.settings:readSetting("home") == true
+end
+
+function Ledger:setHome(on)
+    self.settings:saveSetting("home", on and true or false)
+    self.settings:flush()
+end
+
+function Ledger:toggleHome()
+    self:setHome(not self:homeOn())
+    self:redraw()
+end
+
+-- KOReader's reading statistics plugin, which the rival learns from.
+function Ledger:statisticsOn()
+    local disabled = G_reader_settings:readSetting("plugins_disabled") or {}
+    return not disabled.statistics
+end
+
+function Ledger:enableStatistics()
+    local disabled = G_reader_settings:readSetting("plugins_disabled") or {}
+    disabled.statistics = nil
+    G_reader_settings:saveSetting("plugins_disabled", disabled)
+    G_reader_settings:flush()
+    UIManager:show(InfoMessage:new{ text = _("Reading statistics will be on after KOReader restarts."), timeout = 4 })
 end
 
 function Ledger:addToMainMenu(menu_items)
@@ -99,6 +150,15 @@ function Ledger:collect()
     if data.lead and not data.lead.last_open then recs[#recs + 1] = data.lead end
     for _, rec in ipairs(data.reading or {}) do if not rec.last_open then recs[#recs + 1] = rec end end
     Readest.observe(self.settings, recs)
+    -- books finished since the last look get their race result
+    for _, rec in ipairs(data.history or {}) do
+        if Data.isFinished(rec) and not Race.result(self.settings, rec) then
+            local races = self.settings:readSetting("races") or {}
+            if races[rec.hash or rec.file or ""] then
+                Race.finish(rec, Data.readingStats(rec.hash), self.settings, self:rival(), self:raceModel())
+            end
+        end
+    end
     return data
 end
 
@@ -107,6 +167,11 @@ end
 -- Settings, switched by the tab bar at the bottom. The book page opens on
 -- top of whichever is showing.
 function Ledger:show()
+    if not self.settings:readSetting("onboarded") then
+        local Onboard = require("ledger_onboard")
+        UIManager:show(Onboard:new{ plugin = self })
+        return
+    end
     self.cache = Data.loadCache()
     self.race_model = nil   -- relearn your habits each time the Ledger opens
     self:showTab("reading")
@@ -132,6 +197,7 @@ function Ledger:showTab(id, opts)
     local page
     if id == "library" then
         local books = Data.library(self:libraryDirs(), Data.readestPositions(self.ui), Data.hardcoverMatches())
+        for _, rec in ipairs(books) do rec.result = Race.result(self.settings, rec) end
         page = Library:new{ plugin = self, books = books, filter = opts.filter or "all" }
     elseif id == "settings" then
         page = Settings:new{ plugin = self }

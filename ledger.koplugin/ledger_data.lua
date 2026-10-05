@@ -464,6 +464,7 @@ function Data.readingStats(hash)
             local pages = tonumber(one("SELECT count(*) FROM page_stat_data WHERE id_book = ?", id))
             if secs and pages and pages > 0 then out.pace = secs / pages end
             out.book_start = tonumber(one("SELECT min(start_time) FROM page_stat_data WHERE id_book = ?", id))
+            out.book_end = tonumber(one("SELECT max(start_time + duration) FROM page_stat_data WHERE id_book = ?", id))
             -- where you were when the statistics first saw this book (you may
             -- have started it elsewhere), as a fraction of the book
             local first_page = tonumber(one("SELECT page FROM page_stat_data WHERE id_book = ? ORDER BY start_time LIMIT 1", id))

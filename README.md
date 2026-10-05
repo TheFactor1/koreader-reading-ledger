@@ -66,9 +66,19 @@ Three pages, switched by a tab bar at the bottom (2026-10-04):
   has learned about your reading, Hardcover key, Readest and Bookbridge status,
   animations on/off, refresh, about and credits.
 
-Still to come: progress bars in the library, onboarding, replacing Bookshelf
-as the home screen, the Race results screen, and a run with the real Readest
-plugin signed in.
+**Setting up.** The first time it opens, four short steps: pick your
+runner, pick your rival, see what's switched on (reading statistics,
+Readest, Bookbridge, Hardcover -- with a button where it can be fixed from
+there), and whether the Ledger should be your home screen: then it opens
+when KOReader starts and every time you close a book, with Files one tap
+away. Settings has all of it again.
+
+**Results.** A finished book's race gets a result: in the Library its
+status says WON or LOST, its page says by how much, and Currently reading
+keeps your record against the rival.
+
+Still to come: library progress bars (style still being chosen), and a run
+on a real Kindle.
 
 ## Sources (all optional)
 

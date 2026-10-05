@@ -258,27 +258,29 @@ function Race.state(rec, stats, store, you, rival, m, now, peek)
         -- a book the statistics first saw more than a week ago (you started
         -- it before the Ledger, or are coming back to it) races from here
         if stats.book_start and now - stats.book_start <= 7 * 86400 then
-            r.start = stats.book_start
-            r.rival = math.floor((stats.book_start_pct or 0) * total + 0.5)
+            r.start, r.frac = stats.book_start, stats.book_start_pct or 0
         else
-            r.start, r.rival = now, you_pages
+            r.start, r.frac = now, you_pct
         end
         r.through = dateOf(r.start - 86400)
     end
+    -- The rival's place is kept as a fraction of the book: KOReader's page
+    -- count changes with the font size. (Races from before kept pages.)
+    if not r.frac then r.frac = math.min(1, (r.rival or 0) / total); r.rival = nil end
 
     -- settle whole days since the last visit
     local start_date = dateOf(r.start)
     local changed = false
     local d = nextDate(r.through)
     while d < today do
-        local mult = band((r.rival - you_pages) / math.max(1, m.overall))
+        local mult = band((r.frac * total - you_pages) / math.max(1, m.overall))
         local part = d == start_date and (1 - m.share(r.start)) or 1
-        r.rival = math.min(total, r.rival + dayTarget(m, a, factor, d) * mult * part)
+        r.frac = math.min(1, r.frac + dayTarget(m, a, factor, d) * mult * part / total)
         r.through = d
         changed = true
         d = nextDate(d)
     end
-    if key and store and not peek and (changed or not races[key]) then
+    if key and store and not peek and (changed or races[key] ~= r) then
         races[key] = r
         store:saveSetting("races", races)
         store:flush()
@@ -286,10 +288,10 @@ function Race.state(rec, stats, store, you, rival, m, now, peek)
 
     -- today so far: its share of today's target, at the hours you read
     local today_target = dayTarget(m, a, factor, today)
-    local mult, mood = band((r.rival - you_pages) / math.max(1, m.overall))
+    local mult, mood = band((r.frac * total - you_pages) / math.max(1, m.overall))
     local from = start_date == today and m.share(r.start) or 0
     local rival_pages = math.min(total,
-        math.floor(r.rival + today_target * mult * math.max(0, m.share(now) - from) + 0.5))
+        math.floor(r.frac * total + today_target * mult * math.max(0, m.share(now) - from) + 0.5))
     return {
         total = total,
         pages_known = rec.pages and rec.pages > 0 or false,
@@ -304,6 +306,53 @@ function Race.state(rec, stats, store, you, rival, m, now, peek)
         today = stats.today or 0,
         mood = mood,
     }
+end
+
+-- ---------------------------------------------------------------- results
+-- A finished book's race gets its result, once: did you reach the flag
+-- before the rival? Judged at the time you finished (the last page turn the
+-- statistics saw, else now). Kept on the race as result = { won, by,
+-- rival, at, title }; by is pages (yours ahead, or the rival's).
+function Race.finish(rec, stats, store, rival, m, now)
+    if not store then return nil end
+    local races = store:readSetting("races") or {}
+    local key = rec.hash or rec.file
+    local r = key and races[key]
+    if not r or r.result then return r and r.result end
+    now = now or os.time()
+    local at = math.min(now, stats and stats.book_end or now)
+    local done = setmetatable({ pct = 1, readest = nil }, { __index = rec })
+    local state = Race.state(done, stats, store, nil, rival, m, at)
+    races = store:readSetting("races") or {}
+    r = races[key]
+    if not r then return nil end
+    local won = state.rival_pages < state.total
+    r.result = {
+        won = won,
+        by = won and (state.total - state.rival_pages) or nil,
+        rival = rival, at = at, title = rec.title,
+    }
+    store:saveSetting("races", races)
+    store:flush()
+    return r.result
+end
+
+-- Your record against a rival (all its finished races): wins, losses.
+function Race.tally(store, rival)
+    local won, lost = 0, 0
+    for _, r in pairs(store and store:readSetting("races") or {}) do
+        if type(r) == "table" and r.result and (not rival or r.result.rival == rival) then
+            if r.result.won then won = won + 1 else lost = lost + 1 end
+        end
+    end
+    return won, lost
+end
+
+-- The result of a book's race, if it has one.
+function Race.result(store, rec)
+    local races = store and store:readSetting("races") or {}
+    local r = races[rec.hash or rec.file or ""]
+    return r and r.result
 end
 
 -- ---------------------------------------------------------------- words

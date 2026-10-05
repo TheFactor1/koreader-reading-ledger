@@ -183,7 +183,10 @@ local function statusOf(rec)
     if st == "reading" then
         local pct = rec.pct or 0
         return st, pct, string.format("%d%%", math.floor(pct * 100 + 0.5))
-    elseif st == "finished" then return st, 1, "DONE"
+    elseif st == "finished" then
+        -- a race result when there was a race: WON / LOST
+        if rec.result then return st, 1, rec.result.won and "WON" or "LOST" end
+        return st, 1, "DONE"
     elseif st == "new" then return st, 0, "NEW" end
     return st, nil, nil
 end
