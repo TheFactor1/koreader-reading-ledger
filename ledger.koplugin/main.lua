@@ -90,7 +90,25 @@ function Ledger:homeOn()
 end
 
 function Ledger:setHome(on)
-    self.settings:saveSetting("home", on and true or false)
+    on = on and true or false
+    if on == self:homeOn() and self.settings:has("home") then return end
+    self.settings:saveSetting("home", on)
+    -- Another home screen that takes over at startup (Bookshelf sets
+    -- start_with = "bookshelf") would fight the Ledger for the file
+    -- browser: start in the file browser instead while the Ledger is home,
+    -- and put it back when it isn't. Bookshelf stays installed.
+    local start_with = G_reader_settings:readSetting("start_with")
+    if on and start_with == "bookshelf" then
+        self.settings:saveSetting("start_with_before", start_with)
+        G_reader_settings:saveSetting("start_with", "filemanager")
+        G_reader_settings:flush()
+    elseif not on and self.settings:readSetting("start_with_before") then
+        if start_with == "filemanager" then
+            G_reader_settings:saveSetting("start_with", self.settings:readSetting("start_with_before"))
+            G_reader_settings:flush()
+        end
+        self.settings:delSetting("start_with_before")
+    end
     self.settings:flush()
 end
 
