@@ -96,6 +96,19 @@ function Settings:build(tight)
         "›", function() p:showHabits() end))
     add(row(cw, "fish", "Hardcover", st.hardcover_hint, st.hardcover, function() p:editHardcoverKey() end))
     add(row(cw, nil, "Readest", "Reading there counts in the race too", st.readest))
+    -- the book sources, each set up from here (Bookbridge does the work)
+    if st.zlibrary then
+        add(row(cw, nil, "Z-Library", st.zlibrary_hint, st.zlibrary, function()
+            local bb = p:bookbridge()
+            if bb then bb:zlibrarySignIn(function() p:show() end) end
+        end))
+    end
+    if st.annas then
+        add(row(cw, nil, "Anna's Archive", st.annas_hint, st.annas, function()
+            local bb = p:bookbridge()
+            if bb and bb.editAnnasSettings then bb:editAnnasSettings() end
+        end))
+    end
     add(row(cw, nil, "Bookbridge", st.bookbridge == "NOT SET UP" and "Tap to pick where books come from -- no server needed"
             or "Search, requests, sign-in, sync -- tap for all of it", st.bookbridge,
         function() p:openBookbridge() end))

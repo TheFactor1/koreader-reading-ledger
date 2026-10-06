@@ -738,6 +738,23 @@ function Ledger:sourceStatus()
     -- a connected server or a working book source both count
     local ready = bb and ((bb.server_url and bb.server_url ~= "") or (bb.sourcesConfigured and bb:sourcesConfigured()))
     out.bookbridge = bb and (ready and "CONNECTED" or "NOT SET UP") or "NOT INSTALLED"
+    -- the two book sources on their own (Bookbridge v0.8.1+ tells; older
+    -- builds: through the Bookbridge row)
+    if bb and bb.zlibraryState then
+        local z = bb:zlibraryState()
+        out.zlibrary = string.upper(z.label)
+        out.zlibrary_hint = (not z.installed and "Tap to install its plugin -- search needs no account")
+            or (not z.loaded and "Tap to restart KOReader")
+            or (z.signed_in and "Search and download with your account")
+            or "Search works now; tap to sign in for downloads"
+    end
+    if bb and bb.annasState then
+        local a = bb:annasState()
+        out.annas = string.upper(a.label)
+        out.annas_hint = (not a.set and "Tap to enter your member key -- it downloads directly")
+            or (a.state == "token" and "Anna's Archive didn't accept the key -- tap to change it")
+            or "Direct search and downloads with your key"
+    end
     return out
 end
 

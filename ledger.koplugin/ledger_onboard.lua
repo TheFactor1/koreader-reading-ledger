@@ -193,8 +193,19 @@ function Onboard:build()
         add(checkRow(cw, "Readest", st.readest,
             st.readest == "SIGNED IN" and "Reading there counts in the race."
                 or "Sign in from Readest's own menu and reading there counts too.", nil))
+        -- the two book sources, set up from right here
+        if st.zlibrary then
+            add(checkRow(cw, "Z-Library", st.zlibrary, st.zlibrary_hint,
+                UI.button(st.zlibrary == "NOT INSTALLED" and "Install" or (st.zlibrary == "SIGNED IN" and "Change" or "Sign in"),
+                    function() local bb = p:bookbridge(); if bb then bb:zlibrarySignIn(function() self:update() end) end end, true, 10)))
+        end
+        if st.annas then
+            add(checkRow(cw, "Anna's Archive", st.annas, st.annas_hint,
+                UI.button(st.annas == "NO KEY" and "Add key" or "Change",
+                    function() local bb = p:bookbridge(); if bb and bb.editAnnasSettings then bb:editAnnasSettings() end end, true, 10)))
+        end
         add(checkRow(cw, "Bookbridge", st.bookbridge,
-            st.bookbridge == "NOT SET UP" and "Finds books for you: the Z-Library plugin, an Anna's Archive key, or (optional) a book server of your own."
+            st.bookbridge == "NOT SET UP" and "Finds books for you: the sources above, or (optional) a book server of your own."
                 or "Search and request books, new arrivals. It lives in the Ledger: Settings > Bookbridge.",
             p:bookbridge() and UI.button(st.bookbridge == "CONNECTED" and "Open" or "Connect",
                 function() p:openBookbridge() end, true, 10) or nil))
