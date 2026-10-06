@@ -66,10 +66,15 @@ local function row(cw, icon, label, hint, value, callback, pad)
     return callback and UI.tappable(line, callback) or line
 end
 
-function Settings:build(tight)
+-- The first that fits wins, labels kept as long as possible (the groups
+-- are the point): 1 roomy with group labels; 2 rows closer; 3 rows
+-- packed; 4 packed and no labels (a very small screen).
+function Settings:build(level)
+    level = level or 1
+    local labels = level <= 3
     local function s(n) return Screen:scaleBySize(n) end
     -- (rows are spaced out, or packed closer when they wouldn't all fit)
-    local pad = tight and s(3) or s(10)
+    local pad = (level >= 3 and s(3)) or (level == 2 and s(5)) or s(10)
     local row = function(...)
         local args = { ... }
         args[7] = pad
@@ -84,8 +89,20 @@ function Settings:build(tight)
     local main = VerticalGroup:new{ align = "left" }
     local function add(w) main[#main + 1] = w end
     add(UI.header(cw, "SETTINGS", UI.text("READING LEDGER", "pix", 11, UI.INK2)))
-    add(UI.rule(cw, s(1), UI.INK3))
+    if not labels then add(UI.rule(cw, s(1), UI.INK3)) end
 
+    -- three groups, each under a small label: the race (yours to shape),
+    -- your accounts and where books come from, and the Ledger itself.
+    -- (the labels go when the page has no room for them)
+    local function group(label)
+        if not labels then return end
+        add(UI.vspace(level == 1 and s(14) or s(6)))
+        add(UI.text(label, "pix", 9, UI.INK2))
+        add(UI.vspace(level == 1 and s(4) or s(2)))
+        add(UI.rule(cw, s(1), UI.INK3))
+    end
+
+    group("THE RACE")
     local Race = require("ledger_race")
     local you, rival = Race.animal(p:runner()), Race.animal(p:rival())
     add(row(cw, you.still, "You run as", "Tap to pick an animal or rename it",
@@ -94,6 +111,15 @@ function Settings:build(tight)
         (rival.label .. " · " .. p:petName(rival.id)):upper(), function() p:chooseAnimal("rival") end))
     add(row(cw, nil, string.format("What %s has learned", p:petName(rival.id)), "Your reading habits, and how it's tuned",
         "›", function() p:showHabits() end))
+    local Chase = require("ledger_chase")
+    local look = "FIELD"
+    for _, sty in ipairs(Chase.STYLES) do if sty.id == p:raceStyle() then look = sty.label:upper() end end
+    add(row(cw, nil, "Race look", "Field, running track, trail, bookshelves, scoreboard", look,
+        function() p:chooseRaceStyle() end))
+    add(row(cw, nil, "Animations", "The runners sprint in when the page opens",
+        p:animationsOn() and "ON" or "OFF", function() p:toggleAnimations() end))
+
+    group("ACCOUNTS AND BOOKS")
     add(row(cw, "fish", "Hardcover", st.hardcover_hint, st.hardcover, function() p:editHardcoverKey() end))
     add(row(cw, nil, "Readest", "Reading there counts in the race too", st.readest))
     -- where books come from: one row, one dialog with Z-Library, Anna's
@@ -113,21 +139,18 @@ function Settings:build(tight)
             or (ready > 0 and string.format("%d SOURCE%s", ready, ready == 1 and "" or "S") or st.bookbridge)
         add(row(cw, nil, "Books", table.concat(parts, " · "), value, function() p:showBooksSetup() end))
     end
+
+    group("THE LEDGER")
     add(row(cw, nil, "Open on start", "When KOReader starts and when you close a book",
         p:homeOn() and "ON" or "OFF", function() p:toggleHome() end))
-    local Chase = require("ledger_chase")
-    local look = "FIELD"
-    for _, st in ipairs(Chase.STYLES) do if st.id == p:raceStyle() then look = st.label:upper() end end
-    add(row(cw, nil, "Race look", "Field, running track, trail, bookshelves, scoreboard", look,
-        function() p:chooseRaceStyle() end))
-    add(row(cw, nil, "Animations", "The runners sprint in when the page opens",
-        p:animationsOn() and "ON" or "OFF", function() p:toggleAnimations() end))
     add(row(cw, nil, "Refresh now", "Hardcover, the trending shelf and requests", "›", function() p:refreshRemote(true) end))
     add(row(cw, nil, "About and updates", "Version, check for updates, credits", "›", function() p:showAbout() end))
 
     local foot = UI.tabBar(cw, "settings", function(id) p:showTab(id) end)
     local used = main:getSize().h + foot:getSize().h + 2 * m
-    if used > H and not tight then return self:build(true) end
+    -- (kept for a look from the inspector: what each level needed)
+    self.fit = self.fit or {}; self.fit[level] = used; self.fit.H = H
+    if used > H and level < 4 then return self:build(level + 1) end
     return FrameContainer:new{
         background = UI.WHITE, bordersize = 0, margin = 0, padding = m,
         VerticalGroup:new{ align = "left", main, UI.vspace(math.max(0, H - used)), foot },
