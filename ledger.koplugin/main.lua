@@ -254,7 +254,7 @@ end
 -- ---------------------------------------------------------------- Bookbridge, inside
 -- Bookbridge stays its own plugin (it updates itself, and works without the
 -- Ledger), but with the Ledger installed it lives inside it: its menu opens
--- from the Ledger (Settings > Bookbridge, Library > Find), and its entry in
+-- from the Ledger (Settings > Books, Library > Find), and its entry in
 -- KOReader's own menu is tucked away -- unless "In KOReader's menu too" is
 -- switched on in that Bookbridge menu.
 function Ledger:tuckBookbridge()
@@ -327,7 +327,7 @@ function Ledger:showBookbridgeMenu()
             -- (MenuSorter consumes the item table): a restart it is
             UIManager:askForRestart()
         end,
-        help_text = _("Bookbridge lives in the Reading Ledger (Settings > Bookbridge). Switch this on to also have it in KOReader's own menu."),
+        help_text = _("Bookbridge lives in the Reading Ledger (Settings > Books). Switch this on to also have it in KOReader's own menu."),
     }
     local CenterContainer = require("ui/widget/container/centercontainer")
     local TouchMenu = require("ui/widget/touchmenu")
@@ -758,10 +758,59 @@ function Ledger:sourceStatus()
     return out
 end
 
+-- Where books come from, in one place: the two sources and Bookbridge itself,
+-- each with its state and the one tap that sets it up (Bookbridge does the
+-- work; an older Bookbridge without the state helpers gets its menu).
+function Ledger:showBooksSetup()
+    local bb = self:bookbridge()
+    if not bb then return self:showBookbridgeMenu() end
+    local st = self:sourceStatus()
+    local ButtonDialog = require("ui/widget/buttondialog")
+    local dlg
+    local function pick(fn) return function() UIManager:close(dlg); fn() end end
+    local buttons = {}
+    if st.zlibrary then
+        buttons[#buttons + 1] = { { text = _("Z-Library") .. " -- " .. st.zlibrary:lower(), callback = pick(function()
+            bb:zlibrarySignIn(function() self:show() end)
+        end) } }
+    end
+    if st.annas then
+        buttons[#buttons + 1] = { { text = _("Anna's Archive") .. " -- " .. st.annas:lower(), callback = pick(function()
+            if bb.editAnnasSettings then bb:editAnnasSettings() end
+        end) } }
+    end
+    buttons[#buttons + 1] = { { text = _("Bookbridge: search, requests, sync, settings"),
+        callback = pick(function() self:openBookbridge() end) } }
+    buttons[#buttons + 1] = { { text = _("Close"), callback = function() UIManager:close(dlg) end } }
+    dlg = ButtonDialog:new{
+        title = (st.zlibrary and st.zlibrary_hint or st.annas and st.annas_hint)
+            and _("Where books come from. Tap a line to set it up or change it.")
+            or _("Books come through Bookbridge."),
+        buttons = buttons,
+    }
+    UIManager:show(dlg)
+end
+
 function Ledger:showAbout()
     local TextViewer = require("ui/widget/textviewer")
-    UIManager:show(TextViewer:new{
-        title = _("Reading Ledger"),
+    local ok, meta = pcall(dofile, tostring(self.path) .. "/_meta.lua")
+    local version = ok and type(meta) == "table" and meta.version or "?"
+    -- updates come through Bookbridge, which installs the Ledger like its
+    -- other companions (verified, with the previous version kept)
+    local bb = self:bookbridge()
+    local can_update = bb and bb.installCompanion and bb.companionState
+        and pcall(function() return bb:companionState("ledger") end)
+    local viewer
+    viewer = TextViewer:new{
+        title = _("Reading Ledger") .. " v" .. tostring(version),
+        buttons_table = { {
+            { text = _("Close"), callback = function() UIManager:close(viewer) end },
+            { text = _("Check for updates"), enabled = can_update and true or false, callback = function()
+                UIManager:close(viewer)
+                local Trapper = require("ui/trapper")
+                Trapper:wrap(function() bb:installCompanion("ledger") end)
+            end },
+        } },
         text = table.concat({
             "Every book is a race against a rival that reads a little more than you usually do; a fish waits at the finish. Your place is the furthest of this device and Readest.",
             "",
@@ -771,7 +820,8 @@ function Ledger:showAbout()
             "",
             "Written 100% by an AI (Claude, by Anthropic), directed by Matt.",
         }, "\n"),
-    })
+    }
+    UIManager:show(viewer)
 end
 
 -- ---------------------------------------------------------------- remote data

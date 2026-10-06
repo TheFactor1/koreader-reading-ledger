@@ -96,22 +96,23 @@ function Settings:build(tight)
         "›", function() p:showHabits() end))
     add(row(cw, "fish", "Hardcover", st.hardcover_hint, st.hardcover, function() p:editHardcoverKey() end))
     add(row(cw, nil, "Readest", "Reading there counts in the race too", st.readest))
-    -- the book sources, each set up from here (Bookbridge does the work)
-    if st.zlibrary then
-        add(row(cw, nil, "Z-Library", st.zlibrary_hint, st.zlibrary, function()
-            local bb = p:bookbridge()
-            if bb then bb:zlibrarySignIn(function() p:show() end) end
-        end))
+    -- where books come from: one row, one dialog with Z-Library, Anna's
+    -- Archive and Bookbridge itself (the page has no room for three)
+    do
+        local parts = {}
+        if st.zlibrary then parts[#parts + 1] = "Z-Library " .. st.zlibrary:lower() end
+        if st.annas then parts[#parts + 1] = "Anna's " .. st.annas:lower() end
+        local bb = p:bookbridge()
+        if bb and bb.server_url and bb.server_url ~= "" then parts[#parts + 1] = "server connected"
+        elseif st.bookbridge == "NOT SET UP" then parts[#parts + 1] = "tap to set up"
+        elseif st.bookbridge == "NOT INSTALLED" then parts = { "needs the Bookbridge plugin" } end
+        local ready = 0
+        if st.zlibrary == "SIGNED IN" then ready = ready + 1 end
+        if st.annas and st.annas ~= "NO KEY" and st.annas ~= "KEY REFUSED" then ready = ready + 1 end
+        local value = st.bookbridge == "NOT INSTALLED" and "NOT INSTALLED"
+            or (ready > 0 and string.format("%d SOURCE%s", ready, ready == 1 and "" or "S") or st.bookbridge)
+        add(row(cw, nil, "Books", table.concat(parts, " · "), value, function() p:showBooksSetup() end))
     end
-    if st.annas then
-        add(row(cw, nil, "Anna's Archive", st.annas_hint, st.annas, function()
-            local bb = p:bookbridge()
-            if bb and bb.editAnnasSettings then bb:editAnnasSettings() end
-        end))
-    end
-    add(row(cw, nil, "Bookbridge", st.bookbridge == "NOT SET UP" and "Tap to pick where books come from -- no server needed"
-            or "Search, requests, sign-in, sync -- tap for all of it", st.bookbridge,
-        function() p:openBookbridge() end))
     add(row(cw, nil, "Open on start", "When KOReader starts and when you close a book",
         p:homeOn() and "ON" or "OFF", function() p:toggleHome() end))
     local Chase = require("ledger_chase")
@@ -122,22 +123,7 @@ function Settings:build(tight)
     add(row(cw, nil, "Animations", "The runners sprint in when the page opens",
         p:animationsOn() and "ON" or "OFF", function() p:toggleAnimations() end))
     add(row(cw, nil, "Refresh now", "Hardcover, the trending shelf and requests", "›", function() p:refreshRemote(true) end))
-    -- updates come through Bookbridge, which installs the Ledger like its
-    -- other companions (verified, with the previous version kept)
-    do
-        local bb = p:bookbridge()
-        local can = bb and bb.installCompanion and bb.companionState
-            and pcall(function() return bb:companionState("ledger") end)
-        local ok, meta = pcall(dofile, tostring(p.path) .. "/_meta.lua")
-        local version = ok and type(meta) == "table" and meta.version or "?"
-        add(row(cw, nil, "Check for updates", can and "From the Ledger's GitHub release; Bookbridge keeps it current by itself"
-                or "Needs Bookbridge v0.8.1 or later next to it",
-            "V" .. tostring(version), can and function()
-                local Trapper = require("ui/trapper")
-                Trapper:wrap(function() bb:installCompanion("ledger") end)
-            end or nil))
-    end
-    add(row(cw, nil, "About and credits", "Sprites, fonts, who made this", "›", function() p:showAbout() end))
+    add(row(cw, nil, "About and updates", "Version, check for updates, credits", "›", function() p:showAbout() end))
 
     local foot = UI.tabBar(cw, "settings", function(id) p:showTab(id) end)
     local used = main:getSize().h + foot:getSize().h + 2 * m

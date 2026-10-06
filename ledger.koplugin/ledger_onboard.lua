@@ -206,7 +206,7 @@ function Onboard:build()
         end
         add(checkRow(cw, "Bookbridge", st.bookbridge,
             st.bookbridge == "NOT SET UP" and "Finds books for you: the sources above, or (optional) a book server of your own."
-                or "Search and request books, new arrivals. It lives in the Ledger: Settings > Bookbridge.",
+                or "Search and request books, new arrivals. It lives in the Ledger: Settings > Books.",
             p:bookbridge() and UI.button(st.bookbridge == "CONNECTED" and "Open" or "Connect",
                 function() p:openBookbridge() end, true, 10) or nil))
         add(checkRow(cw, "Hardcover", st.hardcover, "Your yearly goal, paid in fish. Uses your own API key.",
