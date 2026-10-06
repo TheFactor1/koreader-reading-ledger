@@ -30,6 +30,15 @@ about 20 pages a day until it has a few days to go on.
 Pass the rival before the chequered flag (the last page) to win the book;
 out-read its share each day to win the day. A dead heat goes to you.
 
+**The same race on every device.** Nothing about the race is stored on a
+device: it is rebuilt from KOReader's reading statistics, which Bookbridge
+keeps in step between your devices through Readest. Each day is decided
+only by the reading before it, so your phone and your Kindle show the same
+rival, the same days won and the same books won -- whichever you look at,
+and whenever. A book's race starts at your first page turn in it (and again
+where you pick it up after a two-week break). Settings > Books > **Sync now
+with my other devices** catches up on the spot.
+
 **Reading in Readest counts.** Your place in a book is the furthest of this
 device and Readest, and pages you read in Readest on your phone, tablet or
 computer count toward today, this week and what the rival learns. When the
