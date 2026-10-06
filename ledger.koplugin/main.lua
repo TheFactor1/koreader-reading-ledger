@@ -321,8 +321,9 @@ function Ledger:showBookbridgeMenu()
         callback = function()
             self.settings:saveSetting("bookbridge_in_ko_menu", not self.settings:readSetting("bookbridge_in_ko_menu") or nil)
             self.settings:flush()
-            -- (KOReader rebuilds its menu next time it opens)
-            if self.ui and self.ui.menu then self.ui.menu.tab_item_table = nil end
+            -- KOReader builds its menu once per session and can't rebuild it
+            -- (MenuSorter consumes the item table): a restart it is
+            UIManager:askForRestart()
         end,
         help_text = _("Bookbridge lives in the Reading Ledger (Settings > Bookbridge). Switch this on to also have it in KOReader's own menu."),
     }
