@@ -9,6 +9,13 @@
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 version=$(sed -n 's/.*version = "\(.*\)".*/\1/p' "$here/ledger.koplugin/_meta.lua")
+# A version number is used once. Two different builds under one number
+# can't be told apart by the updater (it compares versions), so a device
+# holding the first never gets the second -- it happened with 0.1.0 and
+# again with 0.1.2. Bump ledger.koplugin/_meta.lua first.
+if command -v gh >/dev/null 2>&1 && gh release view "v$version" -R TheFactor1/koreader-reading-ledger >/dev/null 2>&1; then
+  echo "v$version is already released -- bump the version in ledger.koplugin/_meta.lua first" >&2; exit 1
+fi
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 cp -r "$here/ledger.koplugin" "$stage/"
