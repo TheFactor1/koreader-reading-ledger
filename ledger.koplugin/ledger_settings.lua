@@ -96,9 +96,11 @@ function Settings:build(level)
     -- (the labels go when the page has no room for them)
     local function group(label)
         if not labels then return end
-        add(UI.vspace(level == 1 and s(14) or s(6)))
+        local above = (level == 1 and s(14)) or (level == 2 and s(6)) or s(2)
+        local below = (level == 1 and s(4)) or (level == 2 and s(2)) or 0
+        add(UI.vspace(above))
         add(UI.text(label, "pix", 9, UI.INK2))
-        add(UI.vspace(level == 1 and s(4) or s(2)))
+        if below > 0 then add(UI.vspace(below)) end
         add(UI.rule(cw, s(1), UI.INK3))
     end
 
@@ -143,8 +145,8 @@ function Settings:build(level)
     group("THE LEDGER")
     add(row(cw, nil, "Open on start", "When KOReader starts and when you close a book",
         p:homeOn() and "ON" or "OFF", function() p:toggleHome() end))
-    add(row(cw, nil, "Refresh now", "Hardcover, the trending shelf and requests", "›", function() p:refreshRemote(true) end))
-    add(row(cw, nil, "About and updates", "Version, check for updates, credits", "›", function() p:showAbout() end))
+    -- (refreshing is automatic; the button for doing it now is in here)
+    add(row(cw, nil, "About and updates", "Version, check for updates, refresh, credits", "›", function() p:showAbout() end))
 
     local foot = UI.tabBar(cw, "settings", function(id) p:showTab(id) end)
     local used = main:getSize().h + foot:getSize().h + 2 * m

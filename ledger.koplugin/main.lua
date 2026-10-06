@@ -805,6 +805,12 @@ function Ledger:showAbout()
         title = _("Reading Ledger") .. " v" .. tostring(version),
         buttons_table = { {
             { text = _("Close"), callback = function() UIManager:close(viewer) end },
+            -- Hardcover, the trending shelf and requests refresh on their
+            -- own; this is for "now"
+            { text = _("Refresh now"), callback = function()
+                UIManager:close(viewer)
+                self:refreshRemote(true)
+            end },
             { text = _("Check for updates"), enabled = can_update and true or false, callback = function()
                 UIManager:close(viewer)
                 local Trapper = require("ui/trapper")
