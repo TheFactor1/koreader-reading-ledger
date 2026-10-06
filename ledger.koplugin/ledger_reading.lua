@@ -270,14 +270,20 @@ function Reading:build(squeeze)
     -- arrivals and waiting, one line into the library
     local n_new = #(d.just_in or {})
     local n_wait = #(c.requests or {})
-    -- two links: the new ones, and the ones on order (the Requested shelf)
-    add(HorizontalGroup:new{ align = "center",
+    -- two links: the new ones, and -- with a book server, where requests
+    -- can wait -- the ones on order (the Requested shelf)
+    local bb = plugin:bookbridge()
+    local has_server = bb ~= nil and bb.server_url ~= nil and bb.server_url ~= ""
+    local links = { align = "center",
         UI.tappable(UI.text(string.format("%d new %s ›", n_new, n_new == 1 and "book" or "books"), "body", 12),
             function() plugin:showTab("library", { filter = "new" }) end),
-        UI.text("   ·   ", "body", 12, UI.INK2),
-        UI.tappable(UI.text(string.format("waiting for %d ›", n_wait), "body", 12),
-            function() plugin:showTab("library", { filter = "requested" }) end),
-    })
+    }
+    if has_server then
+        links[#links + 1] = UI.text("   ·   ", "body", 12, UI.INK2)
+        links[#links + 1] = UI.tappable(UI.text(string.format("waiting for %d ›", n_wait), "body", 12),
+            function() plugin:showTab("library", { filter = "requested" }) end)
+    end
+    add(HorizontalGroup:new(links))
 
     -- footer: goal, then the tabs
     local foot = VerticalGroup:new{ align = "left" }

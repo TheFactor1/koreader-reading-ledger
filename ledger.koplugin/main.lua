@@ -279,6 +279,8 @@ function Ledger:openBookbridge()
     if has_server or has_source or not bb.connectServer then
         return self:showBookbridgeMenu()
     end
+    -- Bookbridge's own first screen (v0.8+): the no-server path first
+    if bb.showStartHere then return bb:showStartHere() end
     local ButtonDialog = require("ui/widget/buttondialog")
     local dlg
     dlg = ButtonDialog:new{
@@ -857,12 +859,21 @@ function Ledger:showTrending(rec)
     local buttons = {}
     local bb = self:bookbridge()
     if bb then
-        -- a server: ask Shelfmark (request); sources only: fetch it now
+        -- a server: ask Shelfmark (request); sources only: fetch it now;
+        -- nothing set up yet: Bookbridge's first screen
         local via_server = bb.server_url and bb.server_url ~= ""
-        buttons[#buttons + 1] = { { text = via_server and _("Request it with Bookbridge") or _("Get it with Bookbridge"), callback = function()
-            UIManager:close(dlg)
-            self:requestBook(rec.title, rec.author)
-        end } }
+        local ready = via_server or (bb.sourcesConfigured and bb:sourcesConfigured())
+        if ready then
+            buttons[#buttons + 1] = { { text = via_server and _("Request it with Bookbridge") or _("Get it with Bookbridge"), callback = function()
+                UIManager:close(dlg)
+                self:requestBook(rec.title, rec.author)
+            end } }
+        else
+            buttons[#buttons + 1] = { { text = _("Set up Bookbridge to get it"), callback = function()
+                UIManager:close(dlg)
+                self:openBookbridge()
+            end } }
+        end
     end
     buttons[#buttons + 1] = { { text = _("Close"), callback = function() UIManager:close(dlg) end } }
     dlg = ButtonDialog:new{
@@ -944,9 +955,14 @@ function Ledger:requestBook(title, author)
     local bb = self:bookbridge()
     if bb and bb.doSearch then
         -- same calls (and Trapper context) as Bookbridge's own search dialog:
-        -- Shelfmark's search with a server, the sources directly without
+        -- Shelfmark's search with a server, the sources directly without;
+        -- neither set up: Bookbridge's first screen instead of an empty search
+        local via_server = bb.server_url and bb.server_url ~= ""
+        if not via_server and bb.sourcesConfigured and not bb:sourcesConfigured() then
+            return self:openBookbridge()
+        end
         local Trapper = require("ui/trapper")
-        if bb.server_url and bb.server_url ~= "" then
+        if via_server then
             Trapper:wrap(function() bb:doSearch({ query = title, author = author, page = 1 }) end)
         elseif bb.getBook then
             Trapper:wrap(function() bb:getBook(title, author) end)

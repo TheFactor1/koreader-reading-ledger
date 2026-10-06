@@ -194,7 +194,7 @@ function Onboard:build()
             st.readest == "SIGNED IN" and "Reading there counts in the race."
                 or "Sign in from Readest's own menu and reading there counts too.", nil))
         add(checkRow(cw, "Bookbridge", st.bookbridge,
-            st.bookbridge == "NOT SET UP" and "Search and request books. Connect it to your book server with a code -- nothing to type."
+            st.bookbridge == "NOT SET UP" and "Finds books for you: the Z-Library plugin, an Anna's Archive key, or (optional) a book server of your own."
                 or "Search and request books, new arrivals. It lives in the Ledger: Settings > Bookbridge.",
             p:bookbridge() and UI.button(st.bookbridge == "CONNECTED" and "Open" or "Connect",
                 function() p:openBookbridge() end, true, 10) or nil))

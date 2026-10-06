@@ -96,7 +96,7 @@ function Settings:build(tight)
         "›", function() p:showHabits() end))
     add(row(cw, "fish", "Hardcover", st.hardcover_hint, st.hardcover, function() p:editHardcoverKey() end))
     add(row(cw, nil, "Readest", "Reading there counts in the race too", st.readest))
-    add(row(cw, nil, "Bookbridge", st.bookbridge == "NOT SET UP" and "Tap to connect your book server -- no typing"
+    add(row(cw, nil, "Bookbridge", st.bookbridge == "NOT SET UP" and "Tap to pick where books come from -- no server needed"
             or "Search, requests, sign-in, sync -- tap for all of it", st.bookbridge,
         function() p:openBookbridge() end))
     add(row(cw, nil, "Open on start", "When KOReader starts and when you close a book",
