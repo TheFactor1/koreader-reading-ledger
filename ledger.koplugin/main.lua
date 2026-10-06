@@ -407,7 +407,7 @@ function Ledger:show()
     if not self._from_book then Readest.refresh(self.ui, function()
         self.race_model = nil
         self:redraw()
-    end) end
+    end, self:bookbridge()) end
     self._from_book = false
 end
 
@@ -802,13 +802,22 @@ function Ledger:showBooksSetup()
             if bb.editAnnasSettings then bb:editAnnasSettings() end
         end) } }
     end
+    if bb.syncNow then
+        -- your devices in step through Readest (Bookbridge 0.9+)
+        buttons[#buttons + 1] = { { text = _("Sync now with my other devices"), callback = pick(function() bb:syncNow("manual", true) end) } }
+        buttons[#buttons + 1] = { { text = _("Cloud library: every book in Readest"), callback = pick(function()
+            UIManager:broadcastEvent(require("ui/event"):new("ReadestOpenLibrary"))
+        end) } }
+    end
     buttons[#buttons + 1] = { { text = _("Bookbridge: search, requests, sync, settings"),
         callback = pick(function() self:openBookbridge() end) } }
     buttons[#buttons + 1] = { { text = _("Close"), callback = function() UIManager:close(dlg) end } }
     dlg = ButtonDialog:new{
-        title = (st.zlibrary and st.zlibrary_hint or st.annas and st.annas_hint)
+        title = ((st.zlibrary and st.zlibrary_hint or st.annas and st.annas_hint)
             and _("Where books come from. Tap a line to set it up or change it.")
-            or _("Books come through Bookbridge."),
+            or _("Books come through Bookbridge."))
+            .. ((bb.readest_last_sync and bb.readest_last_sync > 0)
+                and ("\n" .. _("Last in step with your other devices: ") .. os.date("%H:%M", bb.readest_last_sync)) or ""),
         buttons = buttons,
     }
     UIManager:show(dlg)

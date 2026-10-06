@@ -99,9 +99,17 @@ local last_pull = 0
 -- Ask Readest for the latest statistics and positions, quietly; on_change
 -- runs once they've landed. At most hourly, and only when already online
 -- (it never turns Wi-Fi on).
-function R.refresh(ui, on_change)
+function R.refresh(ui, on_change, bb)
     local rs = R.plugin(ui)
     if not rs or not NetworkMgr:isOnline() then return end
+    -- Bookbridge 0.9+ keeps the devices in step itself (statistics up and
+    -- down, the library): ask it, and redraw when its pulls land
+    if bb and bb.syncNow then
+        if on_change then listeners = { on_change } end
+        local ok, err = pcall(function() hook(); bb:syncNow("ledger") end)
+        if not ok then logger.warn("ledger: sync failed:", err) end
+        return
+    end
     if os.time() - last_pull < 3600 then return end
     last_pull = os.time()
     if on_change then listeners = { on_change } end
