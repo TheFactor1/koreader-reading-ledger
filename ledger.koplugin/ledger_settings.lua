@@ -68,10 +68,11 @@ end
 
 -- The first that fits wins, labels kept as long as possible (the groups
 -- are the point): 1 roomy with group labels; 2 rows closer; 3 rows
--- packed; 4 packed and no labels (a very small screen).
+-- packed; 4 packed, a slim header and labels with no space around them;
+-- 5 no labels (a very small screen).
 function Settings:build(level)
     level = level or 1
-    local labels = level <= 3
+    local labels = level <= 4
     local function s(n) return Screen:scaleBySize(n) end
     -- (rows are spaced out, or packed closer when they wouldn't all fit)
     local pad = (level >= 3 and s(3)) or (level == 2 and s(5)) or s(10)
@@ -88,7 +89,13 @@ function Settings:build(level)
 
     local main = VerticalGroup:new{ align = "left" }
     local function add(w) main[#main + 1] = w end
-    add(UI.header(cw, "SETTINGS", UI.text("READING LEDGER", "pix", 11, UI.INK2)))
+    if level >= 4 then
+        -- (a slim header: the title line without the band above and below it)
+        add(UI.spread(cw, UI.text("SETTINGS", "pix", 11), UI.text("READING LEDGER", "pix", 11, UI.INK2)))
+        add(UI.vspace(s(4)))
+    else
+        add(UI.header(cw, "SETTINGS", UI.text("READING LEDGER", "pix", 11, UI.INK2)))
+    end
     if not labels then add(UI.rule(cw, s(1), UI.INK3)) end
 
     -- three groups, each under a small label: the race (yours to shape),
@@ -96,7 +103,7 @@ function Settings:build(level)
     -- (the labels go when the page has no room for them)
     local function group(label)
         if not labels then return end
-        local above = (level == 1 and s(14)) or (level == 2 and s(6)) or s(2)
+        local above = (level == 1 and s(14)) or (level == 2 and s(6)) or (level == 3 and s(2)) or 0
         local below = (level == 1 and s(4)) or (level == 2 and s(2)) or 0
         add(UI.vspace(above))
         add(UI.text(label, "pix", 9, UI.INK2))
@@ -152,7 +159,7 @@ function Settings:build(level)
     local used = main:getSize().h + foot:getSize().h + 2 * m
     -- (kept for a look from the inspector: what each level needed)
     self.fit = self.fit or {}; self.fit[level] = used; self.fit.H = H
-    if used > H and level < 4 then return self:build(level + 1) end
+    if used > H and level < 5 then return self:build(level + 1) end
     return FrameContainer:new{
         background = UI.WHITE, bordersize = 0, margin = 0, padding = m,
         VerticalGroup:new{ align = "left", main, UI.vspace(math.max(0, H - used)), foot },
