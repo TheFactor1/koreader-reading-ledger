@@ -753,11 +753,26 @@ function Ledger:sourceStatus()
         out.hardcover = "ADD KEY"
         out.hardcover_hint = "For your yearly goal, paid in fish"
     end
-    local rs = G_reader_settings:readSetting("readest_sync")
-    if type(rs) == "table" and rs.access_token and rs.user_id then out.readest = "SIGNED IN"
-    elseif self.ui and self.ui.readest then out.readest = "NOT SIGNED IN"
-    else out.readest = "NOT INSTALLED" end
     local bb = self:bookbridge()
+    -- Readest: your library and your reading on every device (Bookbridge
+    -- 0.9+ says exactly what it needs next)
+    if bb and bb.readestState then
+        local r = bb:readestState()
+        out.readest = string.upper(r.label)
+        out.readest_hint = (not r.installed and "Your library and sync on every device -- tap to install")
+            or (not r.loaded and "Installed -- tap to restart KOReader")
+            or (not r.signed_in and "Your library and sync on every device -- tap to sign in")
+            or (not r.auto_sync and "Tap to switch sync on")
+            or "Your library and reading, in step on every device"
+        out.readest_button = (not r.installed and "Install") or (not r.loaded and "Restart")
+            or (not r.signed_in and "Sign in") or (not r.auto_sync and "Turn on") or "Sync"
+    else
+        local rs = G_reader_settings:readSetting("readest_sync")
+        if type(rs) == "table" and rs.access_token and rs.user_id then out.readest = "SIGNED IN"
+        elseif self.ui and self.ui.readest then out.readest = "NOT SIGNED IN"
+        else out.readest = "NOT INSTALLED" end
+        out.readest_hint = "Reading there counts in the race too"
+    end
     -- a connected server or a working book source both count
     local ready = bb and ((bb.server_url and bb.server_url ~= "") or (bb.sourcesConfigured and bb:sourcesConfigured()))
     out.bookbridge = bb and (ready and "CONNECTED" or "NOT SET UP") or "NOT INSTALLED"

@@ -190,9 +190,11 @@ function Onboard:build()
             stats_on and "Your rival learns your habits from them."
                 or "Your rival learns your habits from these. Turn them on, then restart KOReader.",
             not stats_on and UI.button("Turn on", function() p:enableStatistics(); self:update() end, true, 10) or nil))
-        add(checkRow(cw, "Readest", st.readest,
-            st.readest == "SIGNED IN" and "Reading there counts in the race."
-                or "Sign in from Readest's own menu and reading there counts too.", nil))
+        -- Readest first: your library and your reading on every device
+        local bb = p:bookbridge()
+        add(checkRow(cw, "Readest", st.readest, st.readest_hint or "Your library and sync on every device",
+            (bb and bb.readestNext) and UI.button(st.readest_button or "Set up",
+                function() bb:readestNext() end, true, 10) or nil))
         -- the two book sources, set up from right here
         if st.zlibrary then
             add(checkRow(cw, "Z-Library", st.zlibrary, st.zlibrary_hint,

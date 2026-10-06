@@ -129,8 +129,11 @@ function Settings:build(level)
         p:animationsOn() and "ON" or "OFF", function() p:toggleAnimations() end))
 
     group("ACCOUNTS AND BOOKS")
+    add(row(cw, nil, "Readest", st.readest_hint, st.readest, function()
+        local bb = p:bookbridge()
+        if bb and bb.readestNext then bb:readestNext() end
+    end))
     add(row(cw, "fish", "Hardcover", st.hardcover_hint, st.hardcover, function() p:editHardcoverKey() end))
-    add(row(cw, nil, "Readest", "Reading there counts in the race too", st.readest))
     -- where books come from: one row, one dialog with Z-Library, Anna's
     -- Archive and Bookbridge itself (the page has no room for three)
     do

@@ -106,7 +106,9 @@ Two ways, both from the [releases](https://github.com/TheFactor1/koreader-readin
   `/mnt/us/koreader/plugins/`), then restart KOReader.
 
 Open it from Tools > Reading Ledger, or pick "reading ledger" in Settings >
-Start with; the first time it walks you through setting up.
+Start with; the first time it walks you through setting up -- **Readest
+first**: a free Readest account keeps your library, your place in each book
+and your reading (so your race) the same on every device.
 
 **Updates:** Settings > Check for updates in the Ledger, or let Bookbridge do
 it -- the Ledger is one of its companions, kept current together with the
