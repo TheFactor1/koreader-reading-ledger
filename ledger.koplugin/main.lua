@@ -269,16 +269,31 @@ function Ledger:tuckBookbridge()
     end
 end
 
--- Bookbridge not connected yet: straight to "Connect a book server" (find
--- the server, show a code, approve it on a phone); once it is, its menu.
+-- Bookbridge's menu. With nothing set up at all -- no book source (see
+-- Bookbridge's Sources) and no server -- the two ways in are offered first.
 function Ledger:openBookbridge()
     local bb = self:bookbridge()
-    if bb and not (bb.server_url and bb.server_url ~= "") and bb.connectServer then
-        local Trapper = require("ui/trapper")
-        Trapper:wrap(function() bb:connectServer() end)
-        return
+    if not bb then return self:showBookbridgeMenu() end
+    local has_server = bb.server_url and bb.server_url ~= ""
+    local has_source = bb.sourcesConfigured and bb:sourcesConfigured()
+    if has_server or has_source or not bb.connectServer then
+        return self:showBookbridgeMenu()
     end
-    self:showBookbridgeMenu()
+    local ButtonDialog = require("ui/widget/buttondialog")
+    local dlg
+    dlg = ButtonDialog:new{
+        title = _("Bookbridge finds books for you. Start with a source -- the Z-Library plugin, an Anna's Archive key -- or connect a book server."),
+        buttons = {
+            { { text = _("Open Bookbridge (sources, settings)"), callback = function() UIManager:close(dlg); self:showBookbridgeMenu() end } },
+            { { text = _("Connect a book server"), callback = function()
+                UIManager:close(dlg)
+                local Trapper = require("ui/trapper")
+                Trapper:wrap(function() bb:connectServer() end)
+            end } },
+            { { text = _("Close"), callback = function() UIManager:close(dlg) end } },
+        },
+    }
+    UIManager:show(dlg)
 end
 
 -- Bookbridge's whole menu, in KOReader's own menu widget, from the Ledger.
@@ -717,7 +732,9 @@ function Ledger:sourceStatus()
     elseif self.ui and self.ui.readest then out.readest = "NOT SIGNED IN"
     else out.readest = "NOT INSTALLED" end
     local bb = self:bookbridge()
-    out.bookbridge = bb and (bb.server_url and bb.server_url ~= "" and "CONNECTED" or "NOT SET UP") or "NOT INSTALLED"
+    -- a connected server or a working book source both count
+    local ready = bb and ((bb.server_url and bb.server_url ~= "") or (bb.sourcesConfigured and bb:sourcesConfigured()))
+    out.bookbridge = bb and (ready and "CONNECTED" or "NOT SET UP") or "NOT INSTALLED"
     return out
 end
 
@@ -837,8 +854,11 @@ function Ledger:showTrending(rec)
     local dlg
     local text = rec.title .. (rec.author and ("\n" .. rec.author) or "") .. (rec.year and (" · " .. rec.year) or "")
     local buttons = {}
-    if self:bookbridge() then
-        buttons[#buttons + 1] = { { text = _("Request it with Bookbridge"), callback = function()
+    local bb = self:bookbridge()
+    if bb then
+        -- a server: ask Shelfmark (request); sources only: fetch it now
+        local via_server = bb.server_url and bb.server_url ~= ""
+        buttons[#buttons + 1] = { { text = via_server and _("Request it with Bookbridge") or _("Get it with Bookbridge"), callback = function()
             UIManager:close(dlg)
             self:requestBook(rec.title, rec.author)
         end } }
@@ -922,9 +942,16 @@ end
 function Ledger:requestBook(title, author)
     local bb = self:bookbridge()
     if bb and bb.doSearch then
-        -- same call (and Trapper context) as Bookbridge's own search dialog
+        -- same calls (and Trapper context) as Bookbridge's own search dialog:
+        -- Shelfmark's search with a server, the sources directly without
         local Trapper = require("ui/trapper")
-        Trapper:wrap(function() bb:doSearch({ query = title, author = author, page = 1 }) end)
+        if bb.server_url and bb.server_url ~= "" then
+            Trapper:wrap(function() bb:doSearch({ query = title, author = author, page = 1 }) end)
+        elseif bb.getBook then
+            Trapper:wrap(function() bb:getBook(title, author) end)
+        else
+            Trapper:wrap(function() bb:doSearch({ query = title, author = author, page = 1 }) end)
+        end
     else
         UIManager:show(InfoMessage:new{
             text = title .. (author and ("\n" .. author) or "") .. "\n\n" .. _("Requesting books needs the Bookbridge plugin."),
