@@ -14,21 +14,21 @@ version=$(sed -n 's/.*version = "\(.*\)".*/\1/p' "$here/ledger.koplugin/_meta.lu
 bb_rev=$(git -C "$bb_repo" rev-parse --short HEAD 2>/dev/null || echo unknown)
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
-mkdir -p "$stage/plugins"
-cp -r "$here/ledger.koplugin" "$stage/plugins/"
-cp -r "$bb_repo/bookbridge.koplugin" "$stage/plugins/"
-rm -f "$stage/plugins/ledger.koplugin/timing"
+cp -r "$here/ledger.koplugin" "$stage/"
+cp -r "$bb_repo/bookbridge.koplugin" "$stage/"
+rm -f "$stage/ledger.koplugin/timing"
 find "$stage" -name '.git*' -prune -exec rm -rf {} +
 cat > "$stage/INSTALL.txt" <<TXT
 Reading Ledger $version (with Bookbridge $bb_rev)
 
-Copy both folders from plugins/ into KOReader's plugins folder
-(on a Kindle: /mnt/us/koreader/plugins/), then restart KOReader.
+Unzip this into KOReader's plugins folder (on a Kindle: /mnt/us/koreader/plugins/)
+so that it holds ledger.koplugin and bookbridge.koplugin side by side, then
+restart KOReader.
 Open it from the menu: Tools > Reading Ledger. The first time it walks you
 through setting up; Bookbridge lives inside it (Settings > Bookbridge).
 TXT
 mkdir -p "$here/dist"
 out="$here/dist/reading-ledger-$version.zip"
 rm -f "$out"
-(cd "$stage" && zip -qr "$out" INSTALL.txt plugins)
+(cd "$stage" && zip -qr "$out" INSTALL.txt ledger.koplugin bookbridge.koplugin)
 echo "$out ($(du -h "$out" | cut -f1)) -- ledger $version, bookbridge $bb_rev"
