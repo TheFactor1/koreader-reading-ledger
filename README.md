@@ -85,11 +85,26 @@ on a real Kindle.
 
 ## Install
 
-One download has everything: `tools/make-bundle.sh` builds
-`dist/reading-ledger-<version>.zip` with two folders, `ledger.koplugin` and
-`bookbridge.koplugin`. Copy both into KOReader's `plugins` folder (on a
-Kindle, `/mnt/us/koreader/plugins/`) and restart KOReader; open it from
-Tools > Reading Ledger, or pick "reading ledger" in Settings > Start with.
+Two ways, both from the [releases](https://github.com/TheFactor1/koreader-reading-ledger/releases):
+
+- **Already have [Bookbridge](https://github.com/TheFactor1/koreader-bookbridge-plugin)
+  (v0.8.1 or later)?** Bookbridge > Status & setup > *Reading Ledger -- home
+  screen* > Install. It downloads `reading-ledger-<version>.koplugin.zip`
+  from the release, checks it against GitHub's checksum, and asks to restart.
+- **Starting from nothing:** download `reading-ledger-<version>.zip` -- the
+  bundle with two folders, `ledger.koplugin` and `bookbridge.koplugin` --
+  and copy both into KOReader's `plugins` folder (on a Kindle,
+  `/mnt/us/koreader/plugins/`), then restart KOReader.
+
+Open it from Tools > Reading Ledger, or pick "reading ledger" in Settings >
+Start with; the first time it walks you through setting up.
+
+**Updates:** Settings > Check for updates in the Ledger, or let Bookbridge do
+it -- the Ledger is one of its companions, kept current together with the
+Z-Library and Readest plugins, with the previous version kept for a rollback.
+
+Building the downloads yourself: `tools/make-release.sh` (the Ledger alone,
+what Bookbridge installs) and `tools/make-bundle.sh` (Ledger + Bookbridge).
 
 **Bookbridge lives inside the Ledger.** It's still its own plugin in its own
 folder -- it updates itself, and works without the Ledger -- but with the
@@ -133,6 +148,12 @@ grid and back, and Files, with 20 books (some in a subfolder).
 - Fonts: **Silkscreen** (Jason Kottke) and **Atkinson Hyperlegible** (Braille Institute),
   both SIL Open Font License; licence texts in `ledger.koplugin/fonts/`.
 - Trending data from **Open Library** (Internet Archive).
+- Installed and updated by **Bookbridge** (same author), whose menu it wraps.
+
+## License
+
+AGPL-3.0 (see `LICENSE`), like Bookbridge and KOReader. The sprites are CC0
+and the fonts SIL OFL, as credited above.
 
 ---
 

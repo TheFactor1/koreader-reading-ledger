@@ -122,6 +122,21 @@ function Settings:build(tight)
     add(row(cw, nil, "Animations", "The runners sprint in when the page opens",
         p:animationsOn() and "ON" or "OFF", function() p:toggleAnimations() end))
     add(row(cw, nil, "Refresh now", "Hardcover, the trending shelf and requests", "›", function() p:refreshRemote(true) end))
+    -- updates come through Bookbridge, which installs the Ledger like its
+    -- other companions (verified, with the previous version kept)
+    do
+        local bb = p:bookbridge()
+        local can = bb and bb.installCompanion and bb.companionState
+            and pcall(function() return bb:companionState("ledger") end)
+        local ok, meta = pcall(dofile, tostring(p.path) .. "/_meta.lua")
+        local version = ok and type(meta) == "table" and meta.version or "?"
+        add(row(cw, nil, "Check for updates", can and "From the Ledger's GitHub release; Bookbridge keeps it current by itself"
+                or "Needs Bookbridge v0.8.1 or later next to it",
+            "V" .. tostring(version), can and function()
+                local Trapper = require("ui/trapper")
+                Trapper:wrap(function() bb:installCompanion("ledger") end)
+            end or nil))
+    end
     add(row(cw, nil, "About and credits", "Sprites, fonts, who made this", "›", function() p:showAbout() end))
 
     local foot = UI.tabBar(cw, "settings", function(id) p:showTab(id) end)
