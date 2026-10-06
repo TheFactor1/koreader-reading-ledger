@@ -251,7 +251,8 @@ function Reading:build(squeeze)
 
     -- stats
     local today_n, week_n, streak_n = plugin:readingCounts()
-    local won, lost = Race.tally(plugin.settings, plugin:rival())
+    local res = plugin:raceResults()
+    local won, lost = res.won, res.lost
     local bw = math.floor(cw / 4)
     add(UI.rule(cw, s(2)))
     add(UI.vspace(s(8)))

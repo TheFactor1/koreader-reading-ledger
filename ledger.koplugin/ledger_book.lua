@@ -54,7 +54,7 @@ function Book:rivalLine(rec, lines)
         return "New arrival! Open it and the race starts."
     end
     if Data.isFinished(rec) then
-        local res = Race.result(self.plugin.settings, rec)
+        local res = self.plugin:raceResult(rec)
         if res and res.won then
             return string.format("You beat me to the flag by %d %s. Good race.", res.by or 0, (res.by or 0) == 1 and "page" or "pages")
         elseif res then
@@ -112,7 +112,7 @@ function Book:build()
     local stats = Data.readingStats(rec.hash)
     local race = Race.state(rec, stats, plugin.settings, plugin:runner(), plugin:rival(), plugin:raceModel(), nil, not rec.opened)
     -- a finished race stays as it ended
-    local res = Data.isFinished(rec) and Race.result(plugin.settings, rec)
+    local res = Data.isFinished(rec) and plugin:raceResult(rec)
     if res then
         race.you_pages, race.you_pct = race.total, 1
         race.rival_pages = res.won and math.max(0, race.total - (res.by or 0)) or race.total

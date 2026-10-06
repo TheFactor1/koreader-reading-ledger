@@ -479,6 +479,8 @@ function Data.readingStats(hash)
         end
     end
     db:close()
+    -- the book's page turns on every device, for its race (Race.state)
+    if hash then out.turns = Data.bookTurns(hash) end
     return out
 end
 
@@ -586,6 +588,122 @@ function Data.coversDir()
         lfs.mkdir(d)
     end
     return d
+end
+
+-- ---------------------------------------------------------------- the race's record
+-- The race is rebuilt from the statistics (ledger_race.lua, Race.timeline),
+-- which Readest syncs between devices -- so it reads ALL of them, the same
+-- way on every device, and nothing that only this device saw.
+
+local function openStats()
+    local db_path = DataStorage:getSettingsDir() .. "/statistics.sqlite3"
+    if lfs.attributes(db_path, "mode") ~= "file" then return nil end
+    local ok, SQ3 = pcall(require, "lua-ljsqlite3/init")
+    if not ok then return nil end
+    local dok, db = pcall(SQ3.open, db_path, "ro")
+    if not dok or not db then return nil end
+    return db
+end
+
+local function eachRow(db, sql, args, fn)
+    pcall(function()
+        local stmt = db:prepare(sql)
+        stmt:reset()
+        if args then stmt:bind(unpack(args)) end
+        while true do
+            local row = stmt:step()
+            if not row then break end
+            fn(row)
+        end
+        stmt:close()
+    end)
+end
+
+-- What the statistics hold, in one line: changes whenever page turns are
+-- added here or arrive from another device. (rows, newest turn)
+function Data.statsFingerprint()
+    local db = openStats()
+    if not db then return nil end
+    local fp
+    eachRow(db, "SELECT count(*), max(start_time) FROM page_stat_data", nil, function(row)
+        fp = tostring(tonumber(row[1]) or 0) .. ":" .. tostring(tonumber(row[2]) or 0)
+    end)
+    db:close()
+    return fp
+end
+
+local all_cache = nil   -- { fp, out }
+-- Every day in the statistics: { days = { [date] = distinct pages },
+-- hours = { [0..23] = share of page turns }, first = date, fp }.
+function Data.allHabits()
+    local fp = Data.statsFingerprint()
+    if not fp then return nil end
+    if all_cache and all_cache.fp == fp then return all_cache.out end
+    local db = openStats()
+    if not db then return nil end
+    local out = { days = {}, hours = {}, fp = fp }
+    eachRow(db, "SELECT date(start_time, 'unixepoch', 'localtime'), count(DISTINCT id_book || ':' || page) FROM page_stat_data GROUP BY 1",
+        nil, function(row)
+            local d = tostring(row[1])
+            out.days[d] = tonumber(row[2]) or 0
+            if not out.first or d < out.first then out.first = d end
+        end)
+    local by_hour, turns = {}, 0
+    eachRow(db, "SELECT CAST(strftime('%H', start_time, 'unixepoch', 'localtime') AS INTEGER), count(*) FROM page_stat_data GROUP BY 1",
+        nil, function(row)
+            local h, n = tonumber(row[1]), tonumber(row[2]) or 0
+            if h then by_hour[h] = n; turns = turns + n end
+        end)
+    db:close()
+    if turns == 0 then out = nil
+    else for h = 0, 23 do out.hours[h] = (by_hour[h] or 0) / turns end end
+    all_cache = { fp = fp, out = out }
+    return out
+end
+
+-- One book's reading, day by day, from its page turns (on any device):
+--   rows   { { t = start time, frac = where in the book (0..1) } ... } by time
+--   total  the book's length in pages (the longest any device counted)
+--   hash   its checksum
+-- nil when the statistics haven't seen it.
+function Data.bookTurns(hash, db_in)
+    if not hash then return nil end
+    local db = db_in or openStats()
+    if not db then return nil end
+    local id, title
+    eachRow(db, "SELECT id, title FROM book WHERE md5 = ?", { hash }, function(row)
+        id = tonumber(row[1]); title = row[2] and tostring(row[2]) or nil
+    end)
+    local out
+    if id then
+        out = { rows = {}, total = 0, hash = hash, title = title }
+        eachRow(db, "SELECT start_time, page, total_pages FROM page_stat_data WHERE id_book = ? ORDER BY start_time, page",
+            { id }, function(row)
+                local t, page, tot = tonumber(row[1]), tonumber(row[2]), tonumber(row[3])
+                if t and page and tot and tot > 0 then
+                    out.rows[#out.rows + 1] = { t = t, frac = math.min(1, page / tot), first_frac = math.max(0, (page - 1) / tot) }
+                    if tot > out.total then out.total = tot end
+                end
+            end)
+        if #out.rows == 0 then out = nil end
+    end
+    if not db_in then db:close() end
+    return out
+end
+
+-- The books the statistics show you reaching the end of (any device):
+-- { [hash] = turns (as Data.bookTurns) }. For the race tally, which must
+-- count the same books everywhere.
+function Data.finishedTurns()
+    local db = openStats()
+    if not db then return {} end
+    local hashes = {}
+    eachRow(db, "SELECT b.md5 FROM page_stat_data p JOIN book b ON b.id = p.id_book WHERE p.total_pages > 0 GROUP BY p.id_book HAVING max(p.page * 1.0 / p.total_pages) >= 0.98",
+        nil, function(row) if row[1] then hashes[#hashes + 1] = tostring(row[1]) end end)
+    local out = {}
+    for _, h in ipairs(hashes) do out[h] = Data.bookTurns(h, db) end
+    db:close()
+    return out
 end
 
 return Data

@@ -378,16 +378,8 @@ function Ledger:collect()
     for _, rec in ipairs(data.reading or {}) do if not rec.last_open then recs[#recs + 1] = rec end end
     Readest.observe(self.settings, recs)
     Timing.lap(t, "collect.observe")
-    -- books finished since the last look get their race result
-    for _, rec in ipairs(data.history or {}) do
-        if Data.isFinished(rec) and not Race.result(self.settings, rec) then
-            local races = self.settings:readSetting("races") or {}
-            if races[rec.hash or rec.file or ""] then
-                Race.finish(rec, Data.readingStats(rec.hash), self.settings, self:rival(), self:raceModel())
-            end
-        end
-    end
-    Timing.lap(t, "collect.results")
+    -- (finished books' results are worked out from the statistics when
+    -- asked for: Ledger:raceResults)
     return data
 end
 
@@ -433,7 +425,7 @@ function Ledger:showTab(id, opts)
     local page
     if id == "library" then
         local books = Data.library(self:libraryDirs(), Data.readestPositions(self.ui), Data.hardcoverMatches())
-        for _, rec in ipairs(books) do rec.result = Race.result(self.settings, rec) end
+        for _, rec in ipairs(books) do rec.result = self:raceResult(rec) end
         page = Library:new{ plugin = self, books = books, filter = opts.filter or "all" }
     elseif id == "settings" then
         page = Settings:new{ plugin = self }
@@ -564,18 +556,49 @@ end
 -- the rival tuned) on the way.
 function Ledger:raceModel()
     if not self.race_model then
-        -- this device's statistics, with reading done in Readest folded in
-        self.race_model = Race.model(Readest.mergeHabits(Data.readingHabits(), self.settings))
-        Race.settle(self.settings, self.race_model, self:rival())
+        -- the race is rebuilt from the statistics on every device alike
+        -- (ledger_race.lua, "the replay"); this is today's model, with the
+        -- whole timeline on it
+        local T = Race.timeline(Data.allHabits(), self:rival())
+        self.race_model = setmetatable({ timeline = T }, { __index = T.model(T.today) })
+        self.display_habits = nil
     end
     return self.race_model
+end
+
+-- Every finished book's race (any device's), and how many you won.
+-- Worked out once per new batch of statistics.
+function Ledger:raceResults()
+    local T = self:raceModel().timeline
+    local key = tostring(T.habits and T.habits.fp) .. "|" .. tostring(T.rival) .. "|" .. T.today
+    if not self._results or self._results.key ~= key then
+        local won, lost, list = Race.tally(T, Data.finishedTurns())
+        local by_hash = {}
+        for _, r in ipairs(list) do if r.hash then by_hash[r.hash] = r end end
+        self._results = { key = key, won = won, lost = lost, list = list, by_hash = by_hash }
+    end
+    return self._results
+end
+
+function Ledger:raceResult(rec)
+    return rec and rec.hash and self:raceResults().by_hash[rec.hash] or nil
+end
+
+-- Your reading by day for the counts on the front page: this device's
+-- statistics with reading done in Readest folded in (display only; the
+-- race itself uses the synced statistics alone).
+function Ledger:displayHabits()
+    if not self.display_habits then
+        self.display_habits = Readest.mergeHabits(Data.readingHabits(), self.settings) or { days = {} }
+    end
+    return self.display_habits
 end
 
 -- Pages read today, in the last 7 days, and the streak of days with reading:
 -- this device (the larger of its statistics and how far books moved) plus
 -- Readest elsewhere.
 function Ledger:readingCounts()
-    local days = (self:raceModel().habits or {}).days or {}
+    local days = self:displayHabits().days or {}
     local now = os.time()
     local today = os.date("%Y-%m-%d", now)
     local week = 0
@@ -898,11 +921,7 @@ end
 
 -- Every finished race: won or lost, and by how much.
 function Ledger:showResults()
-    local list = {}
-    for _, r in pairs(self.settings:readSetting("races") or {}) do
-        if type(r) == "table" and type(r.result) == "table" then list[#list + 1] = r.result end
-    end
-    table.sort(list, function(a, b) return (a.at or 0) > (b.at or 0) end)
+    local list = self:raceResults().list
     local lines = {}
     local won, lost = 0, 0
     for _, res in ipairs(list) do

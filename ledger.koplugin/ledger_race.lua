@@ -20,8 +20,9 @@ races you on them:
 
 Your place is the furthest of this device and Readest.
 
-Everything learned is kept in the Ledger's settings ("rival_form": the
-tuning per animal and recent days' results; "races": each book's race).
+Nothing about the race is stored: it is rebuilt from the statistics,
+which Readest syncs between devices, so every device shows the same race
+(see "the replay" below).
 --]]
 
 local Race = {}
@@ -138,15 +139,25 @@ function Race.model(habits, now)
     return m
 end
 
--- ---------------------------------------------------------------- tuning
-local function form(store)
-    local f = store and store:readSetting("rival_form") or {}
-    f.factor = f.factor or {}
-    f.results = f.results or {}
-    return f
-end
+-- ---------------------------------------------------------------- the replay
+--[[
+The race is rebuilt from KOReader's statistics every time, not remembered:
+the statistics are synced between your devices (by Readest), so every
+device that has them gets the same race -- same rival, same days won, same
+books won -- whichever one you happen to look at, and whenever.
 
-local function factorOf(f, rival) return f.factor[rival] or 1 end
+For that, a day is only ever decided by what came before it: the rival's
+idea of your habits on a day is learned from the statistics before that
+day, and its tuning steps day by day from the first day the statistics
+have. A book's race starts at your first page turn in it (and again where
+you picked it up after a break of two weeks), and each day the rival keeps
+close to where you were at the end of that day. Late page turns -- a device
+that was offline for a few days -- are simply part of the next replay, on
+every device alike.
+--]]
+
+local BREAK = 14 * 86400        -- a pause this long in a book restarts its race
+local FINISH = 0.98             -- where in the book counts as reaching the end
 
 -- The rival's share for a day: your expected day, its animal, its tuning.
 -- 0 on a nap day.
@@ -155,58 +166,62 @@ local function dayTarget(m, a, factor, date)
     return m.expected(date) * a.mult * factor
 end
 
--- Settle the days since the last visit: had you out-read the rival over the
--- week up to that day? Tune it so how often you're ahead heads for its
--- animal's target.
-function Race.settle(store, m, rival, now)
-    if not store then return end
+local timeline_cache = { key = nil, T = nil }
+
+-- You and the rival day by day, from the first day in the statistics to
+-- yesterday (habits: Data.allHabits()). -> T with
+--   model(date)  your habits as known at the start of that day
+--   factor       the rival's tuning now; factor_on[date] that day's
+--   results      [date] = { rival, you, target, won }
+function Race.timeline(habits, rival, now)
     now = now or os.time()
-    local f = form(store)
     local today = dateOf(now)
-    -- first run: learn from here on; after a long break, only the last two
-    -- weeks count (the statistics only go back eight anyway)
-    if not f.settled or f.settled < dateOf(now - 15 * 86400) then f.settled = dateOf(now - 86400) end
+    local key = tostring(habits and habits.fp) .. "|" .. tostring(rival) .. "|" .. today
+    if timeline_cache.key == key then return timeline_cache.T end
     local a = Race.animal(rival)
-    local d = nextDate(f.settled)
-    local changed = not store:readSetting("rival_form")
-    local function pages(date) return m.habits and m.habits.days[date] or 0 end
-    while d < today do
-        local target = dayTarget(m, a, factorOf(f, rival), d)
-        if target > 0 then
-            local you = pages(d)
-            -- you and it over the animal's window (a week; six days, two
-            -- naps, for the rabbit)
-            local you_sum, its_sum, t = 0, 0, timeOf(d)
-            for back = 0, (a.window or 7) - 1 do
-                local dd = dateOf(t - back * 86400)
-                you_sum = you_sum + pages(dd)
-                its_sum = its_sum + dayTarget(m, a, factorOf(f, rival), dd)
+    local T = { rival = rival, today = today, habits = habits, factor_on = {}, results = {}, models = {} }
+    function T.model(date)
+        local m = T.models[date]
+        if not m then m = Race.model(habits, timeOf(date)); T.models[date] = m end
+        return m
+    end
+    local factor = 1
+    if habits and habits.first then
+        local function pages(date) return habits.days[date] or 0 end
+        local d = habits.first
+        while d < today do
+            local m = T.model(d)
+            T.factor_on[d] = factor
+            local target = dayTarget(m, a, factor, d)
+            if target > 0 then
+                -- had you out-read it over the animal's window (a week; six
+                -- days, two naps, for the rabbit)?
+                local you_sum, its_sum, t = 0, 0, timeOf(d)
+                for back = 0, (a.window or 7) - 1 do
+                    local dd = dateOf(t - back * 86400)
+                    you_sum = you_sum + pages(dd)
+                    its_sum = its_sum + dayTarget(m, a, factor, dd)
+                end
+                local won = you_sum >= its_sum
+                T.results[d] = { rival = rival, you = pages(d), target = math.floor(target + 0.5), won = won }
+                -- a small step each day: your wins make it harder, its wins easier
+                factor = math.max(0.4, math.min(1.7, factor * math.exp(0.08 * ((won and 1 or 0) - a.win))))
             end
-            local won = you_sum >= its_sum
-            f.results[d] = { rival = rival, you = you, target = math.floor(target + 0.5), won = won }
-            -- a small step each day: your wins make it harder, its wins easier
-            local step = math.exp(0.08 * ((won and 1 or 0) - a.win))
-            f.factor[rival] = math.max(0.4, math.min(1.7, factorOf(f, rival) * step))
+            d = nextDate(d)
         end
-        f.settled = d
-        changed = true
-        d = nextDate(d)
     end
-    if changed then
-        local keep = dateOf(now - 60 * 86400)
-        for k in pairs(f.results) do if k < keep then f.results[k] = nil end end
-        store:saveSetting("rival_form", f)
-        store:flush()
-    end
+    T.factor = factor
+    T.factor_on[today] = factor
+    timeline_cache = { key = key, T = T }
+    return T
 end
 
--- Days you've beaten this rival lately: won, out of.
-function Race.record(store, rival, days, now)
-    local f = form(store)
+-- Days you've beaten the rival lately: won, out of.
+function Race.record(T, days, now)
     local since = dateOf((now or os.time()) - (days or 30) * 86400)
     local won, of = 0, 0
-    for d, r in pairs(f.results) do
-        if d >= since and r.rival == rival then
+    for d, r in pairs(T and T.results or {}) do
+        if d >= since then
             of = of + 1
             if r.won then won = won + 1 end
         end
@@ -214,7 +229,6 @@ function Race.record(store, rival, days, now)
     return won, of
 end
 
--- ---------------------------------------------------------------- one book
 -- In a book, keep it close: how hard the rival goes given the gap in days
 -- of your reading (positive: the rival is ahead).
 local function band(gap_days)
@@ -225,134 +239,122 @@ local function band(gap_days)
     return 1, nil
 end
 
+-- A book's race up to time t, from its page turns (turns: Data.bookTurns).
+-- -> { start, frac (the rival at the start of t's day), you (you then) }
+function Race.bookRace(turns, T, total, t)
+    local rows = turns.rows
+    local last = 0
+    for i = 1, #rows do if rows[i].t <= t then last = i end end
+    if last == 0 then return nil end
+    -- the race starts at the first turn, or after the last long break before t
+    local seg = 1
+    for i = 2, last do if rows[i].t - rows[i - 1].t >= BREAK then seg = i end end
+    local start, start_frac = rows[seg].t, rows[seg].first_frac
+    -- where you were at the end of each day (the furthest page so far)
+    local you_end, best = {}, start_frac
+    for i = seg, last do
+        if rows[i].frac > best then best = rows[i].frac end
+        you_end[dateOf(rows[i].t)] = best
+    end
+    local a = Race.animal(T.rival)
+    local start_date, upto = dateOf(start), dateOf(t)
+    local frac, you = start_frac, start_frac
+    local d = start_date
+    while d < upto do
+        you = you_end[d] or you
+        local m = T.model(d)
+        local mult = band((frac - you) * total / math.max(1, m.overall))
+        local part = d == start_date and (1 - m.share(start)) or 1
+        frac = math.min(1, frac + dayTarget(m, a, T.factor_on[d] or T.factor, d) * mult * part / total)
+        d = nextDate(d)
+    end
+    return { start = start, frac = frac, you = you_end[upto] or you }
+end
+
+-- The rival's place at time t (rival pages, the day's target, mood).
+local function rivalAt(br, T, a, total, you_pages, t)
+    local day = dateOf(t)
+    local m = T.model(day)
+    local factor = T.factor_on[day] or T.factor
+    local target = dayTarget(m, a, factor, day)
+    local mult, mood = band((br.frac * total - you_pages) / math.max(1, m.overall))
+    local from = dateOf(br.start) == day and m.share(br.start) or 0
+    local pages = math.min(total, math.floor(br.frac * total + target * mult * math.max(0, m.share(t) - from) + 0.5))
+    return pages, target, mood, m, factor
+end
+
 -- The race for one book.
 --   rec    the book (pct, pages, hash, readest)
---   stats  Data.readingStats(rec.hash): book_start, book_start_pct, today
---   store  the Ledger's settings (LuaSettings)
---   you, rival  animal ids
---   m      Race.model()
+--   stats  Data.readingStats(rec.hash), with .turns (its page turns) and .today
+--   T      Race.timeline() (a table with .timeline, as Ledger:raceModel()
+--          returns, works too)
 --   peek   look without starting a race (a book not opened yet): the rival
 --          waits level with you
 -- Returns: total, you_pages, you_pct, rival_pages, rival_pct, rate (the
 -- rival's pages a day at the moment), napping, rival_done, ahead (rival
 -- pages minus yours), today_target, today, mood ("easing off", "pushing")
-function Race.state(rec, stats, store, you, rival, m, now, peek)
+function Race.state(rec, stats, _store, _you, rival, T, now, peek)
     now = now or os.time()
     stats = stats or {}
-    m = m or Race.model(nil, now)
-    local today = dateOf(now)
-    local total = (rec.pages and rec.pages > 0) and rec.pages or Race.DEFAULT_PAGES
+    if T and T.timeline then T = T.timeline end
+    T = T or Race.timeline(nil, rival, now)
+    local turns = stats.turns
+    local total = (turns and turns.total > 0 and turns.total)
+        or ((rec.pages and rec.pages > 0) and rec.pages) or Race.DEFAULT_PAGES
     local you_pct = math.max(rec.pct or 0, rec.readest and rec.readest.pct or 0)
+    local a = Race.animal(rival or T.rival)
+    local br = not peek and turns and Race.bookRace(turns, T, total, now)
+    if br then you_pct = math.max(you_pct, br.you) end
     local you_pages = math.floor(you_pct * total + 0.5)
-    local a = Race.animal(rival)
-    local factor = factorOf(form(store), rival)
-
-    local races = store and store:readSetting("races") or {}
-    local key = rec.hash or rec.file
-    local r = key and races[key]
-    if r and not r.through then r = nil end   -- a race from before the rival learned: start afresh
-    if not r then
-        -- a new race: from the first page of this book in the statistics
-        -- (the rival starts where you were then), or from here, level with you
-        r = {}
-        -- a book the statistics first saw more than a week ago (you started
-        -- it before the Ledger, or are coming back to it) races from here
-        if stats.book_start and now - stats.book_start <= 7 * 86400 then
-            r.start, r.frac = stats.book_start, stats.book_start_pct or 0
-        else
-            r.start, r.frac = now, you_pct
-        end
-        r.through = dateOf(r.start - 86400)
-    end
-    -- The rival's place is kept as a fraction of the book: KOReader's page
-    -- count changes with the font size. (Races from before kept pages.)
-    if not r.frac then r.frac = math.min(1, (r.rival or 0) / total); r.rival = nil end
-
-    -- settle whole days since the last visit
-    local start_date = dateOf(r.start)
-    local changed = false
-    local d = nextDate(r.through)
-    while d < today do
-        local mult = band((r.frac * total - you_pages) / math.max(1, m.overall))
-        local part = d == start_date and (1 - m.share(r.start)) or 1
-        r.frac = math.min(1, r.frac + dayTarget(m, a, factor, d) * mult * part / total)
-        r.through = d
-        changed = true
-        d = nextDate(d)
-    end
-    if key and store and not peek and (changed or races[key] ~= r) then
-        races[key] = r
-        store:saveSetting("races", races)
-        store:flush()
-    end
-
-    -- today so far: its share of today's target, at the hours you read
-    local today_target = dayTarget(m, a, factor, today)
-    local mult, mood = band((r.frac * total - you_pages) / math.max(1, m.overall))
-    local from = start_date == today and m.share(r.start) or 0
-    local rival_pages = math.min(total,
-        math.floor(r.frac * total + today_target * mult * math.max(0, m.share(now) - from) + 0.5))
+    br = br or { start = now, frac = you_pct }   -- not started: level with you
+    local rival_pages, target, mood, m, factor = rivalAt(br, T, a, total, you_pages, now)
     return {
         total = total,
-        pages_known = rec.pages and rec.pages > 0 or false,
+        pages_known = (turns and turns.total > 0) or (rec.pages and rec.pages > 0) or false,
         you_pages = you_pages, you_pct = you_pct,
         rival_pages = rival_pages, rival_pct = rival_pages / total,
         rate = math.floor(m.overall * a.mult * factor * (a.nap and 2 / 3 or 1) + 0.5),
-        napping = today_target == 0,
+        napping = target == 0,
         -- a dead heat goes to you: you turned the last page
         rival_done = rival_pages >= total and you_pages < total,
         ahead = rival_pages - you_pages,
-        today_target = math.floor(today_target + 0.5),
+        today_target = math.floor(target + 0.5),
         today = stats.today or 0,
         mood = mood,
     }
 end
 
--- ---------------------------------------------------------------- results
--- A finished book's race gets its result, once: did you reach the flag
--- before the rival? Judged at the time you finished (the last page turn the
--- statistics saw, else now). Kept on the race as result = { won, by,
--- rival, at, title }; by is pages (yours ahead, or the rival's).
-function Race.finish(rec, stats, store, rival, m, now)
-    if not store then return nil end
-    local races = store:readSetting("races") or {}
-    local key = rec.hash or rec.file
-    local r = key and races[key]
-    if not r or r.result then return r and r.result end
-    now = now or os.time()
-    local at = math.min(now, stats and stats.book_end or now)
-    local done = setmetatable({ pct = 1, readest = nil }, { __index = rec })
-    local state = Race.state(done, stats, store, nil, rival, m, at)
-    races = store:readSetting("races") or {}
-    r = races[key]
-    if not r then return nil end
-    local won = state.rival_pages < state.total
-    r.result = {
-        won = won,
-        by = won and (state.total - state.rival_pages) or nil,
-        rival = rival, at = at, title = rec.title,
-    }
-    store:saveSetting("races", races)
-    store:flush()
-    return r.result
+-- A finished book's result, from its page turns: did you reach the end
+-- before the rival? Judged at the page turn that reached it.
+-- -> { won, by, rival, at, title } (by: pages ahead, yours or the rival's) | nil
+function Race.result(turns, T)
+    if not turns or not T then return nil end
+    local at
+    for _, r in ipairs(turns.rows) do
+        if r.frac >= FINISH then at = r.t; break end
+    end
+    if not at then return nil end
+    local total = turns.total > 0 and turns.total or Race.DEFAULT_PAGES
+    local br = Race.bookRace(turns, T, total, at)
+    if not br then return nil end
+    local rival_pages = rivalAt(br, T, Race.animal(T.rival), total, total, at)
+    local won = rival_pages < total
+    return { won = won, by = won and (total - rival_pages) or nil, rival = T.rival, at = at, title = turns.title, hash = turns.hash }
 end
 
--- Your record against a rival (all its finished races): wins, losses.
-function Race.tally(store, rival)
-    local won, lost = 0, 0
-    for _, r in pairs(store and store:readSetting("races") or {}) do
-        if type(r) == "table" and r.result and (not rival or r.result.rival == rival) then
-            if r.result.won then won = won + 1 else lost = lost + 1 end
+-- Your record against the rival in every finished book (finished:
+-- Data.finishedTurns()): wins, losses, and the results newest first.
+function Race.tally(T, finished)
+    local won, lost, list = 0, 0, {}
+    for _, turns in pairs(finished or {}) do
+        local r = Race.result(turns, T)
+        if r then
+            list[#list + 1] = r
+            if r.won then won = won + 1 else lost = lost + 1 end
         end
     end
-    return won, lost
-end
-
--- The result of a book's race, if it has one.
-function Race.result(store, rec)
-    local races = store and store:readSetting("races") or {}
-    local r = races[rec.hash or rec.file or ""]
-    return r and r.result
+    table.sort(list, function(x, y) return (x.at or 0) > (y.at or 0) end)
+    return won, lost, list
 end
 
 -- ---------------------------------------------------------------- words
@@ -449,7 +451,7 @@ function Race.summary(p, m, now)
             lines[#lines + 1] = "You've been reading less than usual lately; it's easing off to match."
         end
     end
-    local won, of = Race.record(p.settings, rival_id, 30, now)
+    local won, of = Race.record(m.timeline, 30, now)
     if of > 0 then
         lines[#lines + 1] = string.format("Last 30 days: on %d of %d days you'd read more than %s over the week before.", won, of, rival)
     end
