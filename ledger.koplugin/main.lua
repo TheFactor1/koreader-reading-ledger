@@ -1494,6 +1494,23 @@ function Ledger:finishedBooks()
     return out
 end
 
+-- Every book finished in a year (all of them: races and not), newest first.
+function Ledger:showFinished(year)
+    local TextViewer = require("ui/widget/textviewer")
+    local lines = {}
+    for _, e in ipairs(self:finishedBooks()) do
+        if e.at and tonumber(os.date("%Y", e.at)) == year then
+            local verdict = e.won == true and string.format("won by %d", e.by or 0) or e.won == false and "lost" or "finished"
+            lines[#lines + 1] = string.format("%s%s\n   %s · %s", e.title or "?", e.author and (" -- " .. e.author) or "",
+                verdict, os.date("%d %b", e.at))
+        end
+    end
+    UIManager:show(TextViewer:new{
+        title = string.format(_("Finished in %d"), year),
+        text = #lines > 0 and table.concat(lines, "\n\n") or _("Nothing finished this year yet."),
+    })
+end
+
 -- Your year in reading (ledger_year.lua), on top of whichever page.
 function Ledger:showYear(year)
     if self.year_page and UIManager:isWidgetShown(self.year_page) then UIManager:close(self.year_page) end

@@ -239,7 +239,7 @@ function Year:build()
             if used + h + s(30) > H and shown < #y.books then
                 add(UI.vspace(s(6)))
                 add(UI.tappable(UI.text(string.format("and %d more ›", #y.books - shown), "body", 11, UI.BLACK),
-                    function() p:showResults() end))
+                    function() p:showFinished(year) end))
                 break
             end
             add(line)
