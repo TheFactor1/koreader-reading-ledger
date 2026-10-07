@@ -73,6 +73,12 @@ Three pages, switched by a tab bar at the bottom (2026-10-04):
   the next one in its series -- from Hardcover with your key (the series in
   order, skipping the ones you've read there), otherwise from the books' own
   series and number on this device. Tap: the book, or Bookbridge to get it.
+- **Friends** (Settings): race up to three people you follow on Hardcover.
+  When one of them is reading the book you're reading, they're your rival in
+  it -- their animal, at their place from Hardcover. Every week, pages read:
+  "This week: you 212 · alex 180". You see what their Hardcover privacy shows
+  followers; your progress reaches them the same way (Bookbridge sends it).
+  Needs your Hardcover key.
 - **Your year** (tap today / this week / streak): pages, books, days read and
   hours; your best streak, biggest day, the race record and the quickest book;
   pages month by month and the books you finished -- from the statistics, so
@@ -140,7 +146,7 @@ bottom of that menu brings it back.
 | This device | Books in progress, new arrivals, pages read today (KOReader statistics) |
 | Readest plugin | Your position in Readest for every book, and reading done there (statistics and positions) |
 | Bookbridge | Requests still on order, Hardcover matches, search and request |
-| Hardcover, your own key | Shelves, yearly goal, a book's rating and series |
+| Hardcover, your own key | Shelves, yearly goal, a book's rating and series, what's next in a series, friends' reading |
 | Open Library | The Trending shelf, and a cover for a book that has none of its own (looked up once by its title and author); no account, straight from the device |
 
 No server of anyone's is involved for trending, and no shared Hardcover key is

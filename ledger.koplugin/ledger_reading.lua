@@ -234,11 +234,28 @@ function Reading:build(squeeze)
         local rstats = setmetatable({ today = (plugin:readingCounts()) }, { __index = stats })
         local race = Race.state(rec, rstats, plugin.settings, plugin:runner(), plugin:rival(), plugin:raceModel())
         race.today_readest = rd_today
-        local lines = Race.lines(plugin, rec, race, self.cache)
+        -- a friend reading this book too (Hardcover): they're the rival here
+        local buddy = plugin:buddyFor(rec)
+        local voice = plugin
+        if buddy then
+            race.rival_pct = buddy.pct
+            race.rival_pages = math.floor(buddy.pct * race.total + 0.5)
+            race.ahead = race.rival_pages - race.you_pages
+            race.napping, race.mood = false, nil
+            race.rival_done = buddy.pct >= 1 and race.you_pct < 1
+            voice = setmetatable({
+                rival = function() return "__friend" end,
+                petName = function(_self, id) if id == "__friend" then return buddy.friend.username end return plugin:petName(id) end,
+            }, { __index = plugin })
+        end
+        local lines = Race.lines(voice, rec, race, self.cache)
+        if buddy then
+            lines.today = string.format("A buddy read with %s (their place from Hardcover). First to the flag wins.", buddy.friend.username)
+        end
         Timing.lap(tt, "build.race" .. squeeze)
         local chase = Chase:new{
             width = cw, height = math.floor(H * (0.19 - 0.02 * math.min(squeeze, 3))),
-            you = plugin:runner(), rival = plugin:rival(), style = plugin:raceStyle(),
+            you = plugin:runner(), rival = buddy and buddy.animal or plugin:rival(), style = plugin:raceStyle(),
             you_pct = race.you_pct, rival_pct = race.rival_pct, napping = race.napping,
             you_says = lines.you_says, rival_says = lines.rival_says, fish_says = lines.fish_says,
             animate = plugin:animationsOn(), t = 1,
@@ -295,6 +312,16 @@ function Reading:build(squeeze)
     add(UI.vspace(s(8)))
     add(UI.rule(cw, s(2)))
     gap(s(10))
+
+    -- friends: pages this week (Hardcover), most first
+    local wk = squeeze < 4 and plugin:friendsWeek()
+    if wk then
+        local parts = {}
+        for _, e in ipairs(wk) do parts[#parts + 1] = string.format("%s %d", e.name, e.pages) end
+        add(UI.tappable(UI.text("This week: " .. table.concat(parts, " · ") .. " ›", "body", 12, UI.BLACK, cw),
+            function() plugin:showFriends() end))
+        gap(s(8))
+    end
 
     -- arrivals and waiting, one line into the library
     local n_new = #(d.just_in or {})

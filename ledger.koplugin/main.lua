@@ -1080,6 +1080,8 @@ function Ledger:refreshRemote(force)
     local covers_dir = Data.coversDir()
     local fetch_trending = force or not (c.trending and #c.trending > 0)
         or os.time() - (c.trending_at or 0) >= TRENDING_EVERY
+    local friends = self:friends()
+    local week_start = self:weekStart()
     Bg.run(function()
         local out = {}
         if token then
@@ -1087,6 +1089,14 @@ function Ledger:refreshRemote(force)
             out.hardcover, out.hardcover_err = front, err
             -- the Library's Want to Read shelf
             if front then out.want = Net.hardcoverWant(token, 12, covers_dir) end
+        end
+        -- friends' reading (Hardcover): what they're reading, pages this week
+        if token and #friends > 0 then
+            out.friends = {}
+            for _, f in ipairs(friends) do
+                local r = Net.hardcoverFriend(token, f.id, week_start)
+                if r then out.friends[tostring(f.id)] = r end
+            end
         end
         -- the Library's trending shelf, with or without a Hardcover key:
         -- once a day is plenty for a weekly list
@@ -1103,6 +1113,7 @@ function Ledger:refreshRemote(force)
         if out.trending and #out.trending > 0 then
             cache.trending, cache.trending_at = out.trending, os.time()
         end
+        if out.friends then cache.friends, cache.friends_week = out.friends, week_start end
         cache.fetched_at = os.time()
         self.cache = cache
         self:refreshRequests()
@@ -1223,6 +1234,167 @@ function Ledger:openSeriesNext(sn, after_title)
     self:showTrending({ title = nx.title, author = nx.author, year = nx.year, cover_file = nx.cover,
         source = string.format(_("Book %s of %s, after %s."), pos or "?", sn.series or "the series", after_title or "the one you finished")
             .. (nx.status_id == 1 and (" " .. _("It's on your Want to Read shelf.")) or "") })
+end
+
+-- ---------------------------------------------------------------- friends
+-- People you follow on Hardcover, raced two ways: when one of them is
+-- reading the book you're reading (a buddy read), they're the runner
+-- against you; and every week, pages read. Their reading comes from
+-- Hardcover with your key, as far as their privacy lets you see it; yours
+-- reaches them the same way (Bookbridge sends your progress to Hardcover).
+local FRIENDS_MAX = 3
+local FRIEND_ANIMALS = { "dog", "rabbit", "tortoise", "cat" }
+
+function Ledger:friends()
+    local f = self.settings:readSetting("friends")
+    return type(f) == "table" and f or {}
+end
+
+-- An animal for a friend: their own pick, else one that isn't yours.
+function Ledger:friendAnimal(f, i)
+    if f.animal then return f.animal end
+    local n = 0
+    for _, a in ipairs(FRIEND_ANIMALS) do
+        if a ~= self:runner() then n = n + 1; if n == i then return a end end
+    end
+    return "dog"
+end
+
+-- Monday 00:00 this week (local time).
+function Ledger:weekStart(now)
+    local t = os.date("*t", now or os.time())
+    local back = (t.wday + 5) % 7   -- (wday: Sunday 1)
+    return os.time{ year = t.year, month = t.month, day = t.day - back, hour = 0 }
+end
+
+-- Pages since Monday: you (the statistics, today included) and each friend.
+-- -> { { name, pages, you = true|nil } } most first, or nil without friends
+function Ledger:friendsWeek()
+    local friends = self:friends()
+    local c = self.cache or {}
+    if #friends == 0 or not c.friends then return nil end
+    local start = self:weekStart()
+    if c.friends_week ~= start then return nil end   -- (last week's numbers)
+    local days = (Data.allHabits() or {}).days or {}
+    local mine = 0
+    for i = 0, 6 do
+        local d = os.date("%Y-%m-%d", start + i * 86400 + 43200)
+        if d < os.date("%Y-%m-%d") then mine = mine + (days[d] or 0) end
+    end
+    mine = mine + (self:readingCounts())
+    local out = { { name = _("you"), pages = mine, you = true } }
+    for _, f in ipairs(friends) do
+        local r = c.friends[tostring(f.id)]
+        if r then out[#out + 1] = { name = f.username, pages = r.pages or 0 } end
+    end
+    table.sort(out, function(a, b) return a.pages > b.pages end)
+    return out
+end
+
+-- A friend reading this book too: { friend, animal, pct, pages, total }.
+function Ledger:buddyFor(rec)
+    local c = self.cache or {}
+    if not (rec and rec.hardcover_id and c.friends) then return nil end
+    for i, f in ipairs(self:friends()) do
+        local r = c.friends[tostring(f.id)]
+        local b = r and r.reading and r.reading[tostring(rec.hardcover_id)]
+        if b then return { friend = f, animal = self:friendAnimal(f, i), pct = b.pct, pages = b.pages, total = b.total } end
+    end
+end
+
+function Ledger:showFriends()
+    local ButtonDialog = require("ui/widget/buttondialog")
+    local token = self:hardcoverToken()
+    local dlg
+    local function reopen() UIManager:close(dlg); self:showFriends() end
+    local buttons = {}
+    local friends = self:friends()
+    for i, f in ipairs(friends) do
+        buttons[#buttons + 1] = { { text = string.format("%s (%s) -- %s", f.username, Race.animal(self:friendAnimal(f, i)).label:lower(),
+            _("tap to remove")), align = "left", callback = function()
+            table.remove(friends, i)
+            self.settings:saveSetting("friends", friends)
+            self.settings:flush()
+            reopen()
+            self:redraw()
+        end } }
+    end
+    local function add(u)
+        for _, f in ipairs(friends) do if f.id == u.id then return end end
+        friends[#friends + 1] = { id = u.id, username = u.username }
+        self.settings:saveSetting("friends", friends)
+        self.settings:flush()
+        self:refreshRemote(true)
+    end
+    if token and #friends < FRIENDS_MAX then
+        buttons[#buttons + 1] = { { text = _("Add someone you follow on Hardcover"), callback = function()
+            UIManager:close(dlg)
+            self:withNet(function() return Net.hardcoverFollows(token) end, function(list)
+                if not list or #list == 0 then
+                    UIManager:show(InfoMessage:new{ text = _("You don't follow anyone on Hardcover yet. Follow a friend there (hardcover.app), then add them here -- or add them by username.") })
+                    return
+                end
+                local d2
+                local b2 = {}
+                for _, u in ipairs(list) do
+                    b2[#b2 + 1] = { { text = u.username .. (u.name and (" -- " .. u.name) or ""), align = "left", callback = function()
+                        UIManager:close(d2); add(u); self:showFriends()
+                    end } }
+                end
+                b2[#b2 + 1] = { { text = _("Close"), callback = function() UIManager:close(d2) end } }
+                d2 = ButtonDialog:new{ title = _("Who you follow on Hardcover"), buttons = b2 }
+                UIManager:show(d2)
+            end)
+        end } }
+        buttons[#buttons + 1] = { { text = _("Add by Hardcover username"), callback = function()
+            UIManager:close(dlg)
+            local input
+            input = InputDialog:new{
+                title = _("Their Hardcover username"),
+                buttons = { {
+                    { text = _("Cancel"), id = "close", callback = function() UIManager:close(input) end },
+                    { text = _("Add"), is_enter_default = true, callback = function()
+                        local name = input:getInputText():gsub("^%s*@?", ""):gsub("%s+$", "")
+                        UIManager:close(input)
+                        if name == "" then return end
+                        self:withNet(function() return Net.hardcoverUser(token, name) end, function(u)
+                            if not u then
+                                UIManager:show(InfoMessage:new{ text = string.format(_("No one called %s on Hardcover."), name) })
+                                return
+                            end
+                            add(u); self:showFriends()
+                        end)
+                    end },
+                } },
+            }
+            UIManager:show(input)
+            input:onShowKeyboard()
+        end } }
+    end
+    buttons[#buttons + 1] = { { text = _("Close"), callback = function() UIManager:close(dlg) end } }
+    local intro
+    if not token then
+        intro = _("Race friends from Hardcover: add your Hardcover key first (Settings > Hardcover).")
+    else
+        intro = _("Race people you follow on Hardcover: when you're reading the same book, they're your rival in it; every week, pages read. You see what their Hardcover privacy shows followers; they see you the same way (your progress goes there through Bookbridge).")
+    end
+    dlg = ButtonDialog:new{ title = intro, buttons = buttons }
+    UIManager:show(dlg)
+end
+
+-- A Hardcover call with a "one moment" box, off the UI's back.
+function Ledger:withNet(task, on_done)
+    if not NetworkMgr:isOnline() then
+        UIManager:show(InfoMessage:new{ text = _("Connect to Wi-Fi first."), timeout = 3 })
+        return
+    end
+    local wait = InfoMessage:new{ text = _("Asking Hardcover...") }
+    UIManager:show(wait)
+    UIManager:forceRePaint()
+    Bg.run(task, function(ok, r)
+        UIManager:close(wait)
+        on_done(ok and r or nil)
+    end, 30)
 end
 
 -- Your year in reading (ledger_year.lua), on top of whichever page.

@@ -35,10 +35,11 @@ local function request(method, url, headers, body, block_timeout, total_timeout)
         source = body and ltn12.source.string(body) or nil,
     }
     local requester = url:match("^https:") and https or http
-    local ok, code = pcall(function() return socket.skip(1, requester.request(req)) end)
+    local ok, code, resp_headers = pcall(function() return socket.skip(1, requester.request(req)) end)
     socketutil:reset_timeout()
     if not ok then return nil, "connection error: " .. tostring(code) end
-    if code ~= 200 then return nil, "HTTP " .. tostring(code) end
+    if type(code) ~= "number" then return nil, "connection error: " .. tostring(code) end
+    if code ~= 200 then return nil, "HTTP " .. tostring(code), resp_headers end
     return table.concat(sink_t)
 end
 
@@ -51,9 +52,17 @@ local function getJSON(url)
 end
 
 -- Downloads url to path unless it's already there. Returns path or nil.
+-- Follows redirects (Open Library's covers often move to archive.org; the
+-- HTTPS requester doesn't follow them by itself).
 function Net.fetchFile(url, path)
     if lfs.attributes(path, "mode") == "file" then return path end
-    local body = request("GET", url, nil, nil, 10, 20)
+    local body, err, headers
+    for _ = 1, 4 do
+        body, err, headers = request("GET", url, nil, nil, 10, 20)
+        local to = not body and type(headers) == "table" and (headers.location or headers.Location)
+        if not (to and tostring(err):match("^HTTP 30[1278]")) then break end
+        url = to:match("^https?://") and to or (url:match("^(https?://[^/]+)") .. to)
+    end
     if not body or #body < 200 then return nil end
     local tmp = path .. ".part"
     local f = io.open(tmp, "wb")
@@ -73,18 +82,30 @@ end
 
 function Net.openLibraryCover(title, author, covers_dir)
     if not title or title == "" or not covers_dir then return nil end
-    local url = string.format("%s/search.json?title=%s%s&fields=cover_i&limit=5", OPENLIBRARY,
+    local url = string.format("%s/search.json?title=%s%s&fields=cover_i,language&limit=8", OPENLIBRARY,
         urlencode(title), author and author ~= "" and ("&author=" .. urlencode(author)) or "")
     local d, err = getJSON(url)
     if not d then return nil, err end
+    -- (an English edition's cover when there's one: the first match can be
+    -- a translation -- Red Rising came back as "Amanecer rojo")
+    -- English only first, then English among others, then anything
+    local best, best_score
     for _, doc in ipairs(type(d.docs) == "table" and d.docs or {}) do
-        local id = num(doc.cover_i)
-        if id then
-            return Net.fetchFile(string.format("https://covers.openlibrary.org/b/id/%d-M.jpg", id),
-                string.format("%s/ol-%d.jpg", covers_dir, id))
+        local cover = type(doc) == "table" and num(doc.cover_i)
+        if cover then
+            local langs = type(doc.language) == "table" and doc.language or {}
+            local all = table.concat(langs, " ")
+            local score = (all == "eng" and 2) or (all:find("eng", 1, true) and 1) or 0
+            if not best_score or score > best_score then best, best_score = cover, score end
         end
     end
-    return nil
+    local id = best
+    if not id then return nil end
+    local file = Net.fetchFile(string.format("https://covers.openlibrary.org/b/id/%d-M.jpg", id),
+        string.format("%s/ol-%d.jpg", covers_dir, id))
+    -- (a cover that wouldn't download is "try again", not "none")
+    if not file then return nil, "download failed" end
+    return file
 end
 
 -- Open Library trending. period: "daily" | "weekly" | "monthly".
@@ -325,6 +346,80 @@ function Net.hardcoverSeriesNext(token, book_id, covers_dir)
         end
         pick.image = nil
         out.next = pick
+    end
+    return out
+end
+
+-- ---------------------------------------------------------------- friends
+-- People you follow on Hardcover: { { id, username, name } }.
+function Net.hardcoverFollows(token)
+    local data, err = Net.hardcover(token, [[
+        query LedgerFollows { me { followed_users(limit: 100) { followed_user { id username name } } } }
+    ]])
+    if not data then return nil, err end
+    local me = type(data.me) == "table" and data.me[1]
+    local out = {}
+    for _, f in ipairs(type(me) == "table" and type(me.followed_users) == "table" and me.followed_users or {}) do
+        local u = type(f) == "table" and type(f.followed_user) == "table" and f.followed_user
+        if u and num(u.id) and str(u.username) then
+            out[#out + 1] = { id = num(u.id), username = str(u.username), name = str(u.name) }
+        end
+    end
+    table.sort(out, function(a, b) return a.username:lower() < b.username:lower() end)
+    return out
+end
+
+-- A Hardcover user by username: { id, username, name } or nil.
+function Net.hardcoverUser(token, username)
+    local data, err = Net.hardcover(token, [[
+        query LedgerUser($u: citext!) { users(where: {username: {_eq: $u}}, limit: 1) { id username name } }
+    ]], { u = username })
+    if not data then return nil, err end
+    local u = type(data.users) == "table" and data.users[1]
+    if type(u) ~= "table" or not num(u.id) then return nil, "not found" end
+    return { id = num(u.id), username = str(u.username), name = str(u.name) }
+end
+
+-- A friend's reading, as far as their Hardcover privacy lets you see it:
+-- the books they're reading now (by Hardcover book id: where they are) and
+-- the pages they've read since `since` (their progress updates' deltas).
+-- -> { reading = { [book_id] = { title, pct, pages, total } }, pages = n }
+function Net.hardcoverFriend(token, user_id, since)
+    local data, err = Net.hardcover(token, [[
+        query LedgerFriend($id: Int!, $since: timestamptz!) {
+            users(where: {id: {_eq: $id}}, limit: 1) {
+                username
+                user_books(where: {status_id: {_eq: 2}}, order_by: {updated_at: desc}, limit: 20) {
+                    book_id
+                    book { title pages }
+                    user_book_reads(order_by: {id: desc}, limit: 1) { progress progress_pages edition { pages } }
+                }
+            }
+            reading_journals(where: {user_id: {_eq: $id}, event: {_eq: "progress_updated"}, action_at: {_gte: $since}},
+                             order_by: {action_at: desc}, limit: 300) { metadata }
+        }
+    ]], { id = user_id, since = os.date("!%Y-%m-%dT%H:%M:%SZ", since) })
+    if not data then return nil, err end
+    local u = type(data.users) == "table" and data.users[1]
+    if type(u) ~= "table" then return nil, "not found" end
+    local out = { username = str(u.username), reading = {}, pages = 0 }
+    for _, ub in ipairs(type(u.user_books) == "table" and u.user_books or {}) do
+        local id = type(ub) == "table" and num(ub.book_id)
+        local r = id and type(ub.user_book_reads) == "table" and ub.user_book_reads[1]
+        if type(r) == "table" then
+            local total = (type(r.edition) == "table" and num(r.edition.pages)) or (type(ub.book) == "table" and num(ub.book.pages))
+            local pct = num(r.progress)
+            local pages = num(r.progress_pages)
+            if not pct and pages and total and total > 0 then pct = 100 * pages / total end
+            if pct then
+                out.reading[tostring(id)] = { title = type(ub.book) == "table" and str(ub.book.title) or nil,
+                    pct = math.max(0, math.min(1, pct / 100)), pages = pages, total = total }
+            end
+        end
+    end
+    for _, j in ipairs(type(data.reading_journals) == "table" and data.reading_journals or {}) do
+        local d = type(j) == "table" and type(j.metadata) == "table" and num(j.metadata.pages_delta)
+        if d and d > 0 then out.pages = out.pages + d end
     end
     return out
 end

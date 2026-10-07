@@ -133,6 +133,12 @@ function Settings:build(level)
         (you.label .. " · " .. p:petName(you.id)):upper(), function() p:chooseAnimal("runner") end))
     put(row(colw, rival.still, "Your rival", rival.hint,
         (rival.label .. " · " .. p:petName(rival.id)):upper(), function() p:chooseAnimal("rival") end))
+    do
+        local n = #p:friends()
+        put(row(colw, nil, "Friends", "Race people you follow on Hardcover",
+            not p:hardcoverToken() and "NEEDS HARDCOVER" or (n > 0 and string.format("%d", n) or "ADD"),
+            function() p:showFriends() end))
+    end
     put(row(colw, nil, string.format("What %s has learned", p:petName(rival.id)), "Your reading habits, and how it's tuned",
         "›", function() p:showHabits() end))
     local Chase = require("ledger_chase")
