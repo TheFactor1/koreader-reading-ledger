@@ -166,9 +166,12 @@ function Library:chooseShelf()
     local ButtonDialog = require("ui/widget/buttondialog")
     local dlg
     local buttons = {}
+    -- (requests wait on a book server: no Requested shelf without one)
+    local bb = self.plugin:bookbridge()
+    local has_server = bb ~= nil and bb.server_url ~= nil and bb.server_url ~= ""
     for _, f in ipairs(SHELVES) do
-        buttons[#buttons + 1] = { { text = (f.id == self.filter and "✓ " or "") .. f.label .. " -- " .. f.hint:lower(),
-            align = "left", callback = function() UIManager:close(dlg); self:setFilter(f.id) end } }
+        if f.id ~= "requested" or has_server then buttons[#buttons + 1] = { { text = (f.id == self.filter and "✓ " or "") .. f.label .. " -- " .. f.hint:lower(),
+            align = "left", callback = function() UIManager:close(dlg); self:setFilter(f.id) end } } end
     end
     dlg = ButtonDialog:new{ title = "Shelves", buttons = buttons }
     UIManager:show(dlg)
@@ -437,13 +440,16 @@ function Library:build()
         grid:resetLayout()
     end
     if #self.list == 0 then
-        local empty = { all = "No books here yet. Pip will bring some.", reading = "Nothing in progress.",
+        local p = self.plugin
+        local empty = { all = p:bookbridge() and "No books here yet. FIND looks in your book sources."
+                or "No books here yet: books in your library folder show up here.",
+            reading = "Nothing in progress.",
             new = "Nothing new yet.", finished = "No finished books yet. Keep racing.",
             trending = "Nothing here yet. Trending books come from Open Library when you're online.",
             want = self.plugin:hardcoverToken() and "Nothing on your Want to Read shelf yet, or it hasn't loaded: it comes with the next refresh."
                 or "Add your Hardcover key in Settings to see your Want to Read shelf here.",
             requested = "Nothing waiting. Books you request through Bookbridge show up here until they arrive." }
-        grid[#grid + 1] = UI.text(empty[self.filter] or "", "body", 13, UI.INK2, cw)
+        grid[#grid + 1] = UI.para(empty[self.filter] or "", "body", 13, cw, UI.INK2)
     end
 
     -- paging, centred, only when there is more than one page
