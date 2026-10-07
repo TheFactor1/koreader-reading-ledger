@@ -39,13 +39,21 @@ local STEPS = 4
 function Onboard:init()
     self.dimen = Geom:new{ x = 0, y = 0, w = Screen:getWidth(), h = Screen:getHeight() }
     if Device:hasKeys() then
-        self.key_events = { Close = { { Device.input.group.Back } } }
+        self.key_events = { SkipSetup = { { Device.input.group.Back } } }
     end
     self[1] = self:build()
 end
 
-function Onboard:onClose()
+-- Back skips the setup (as SKIP SETUP does). A plain Close -- KOReader
+-- quitting or restarting, a power off -- only closes it: the setup isn't
+-- done, so it comes back next time.
+function Onboard:onSkipSetup()
     self:finish()
+    return true
+end
+
+function Onboard:onClose()
+    UIManager:close(self)
     return true
 end
 
@@ -99,23 +107,28 @@ local function animalTile(a, name, line, w, chosen, on_tap, body_h)
 end
 
 -- A row of the setup checklist: what, its state, and maybe a button.
-local function checkRow(cw, label, state, hint, button)
+local function checkRow(cw, label, state, hint, button, compact)
     local function s(n) return Screen:scaleBySize(n) end
+    -- (compact, when the page is short: less air, and the state only where
+    -- there's no button to say what's next)
+    if compact and button then state = "" end
+    local gap = compact and s(4) or s(10)
     local text_w = math.floor(cw * 0.62)
     local left = VerticalGroup:new{ align = "left",
         UI.text(label, "bold", 13, UI.BLACK, text_w),
         UI.para(hint, "body", 10, text_w, UI.INK2),
     }
-    local right = VerticalGroup:new{ align = "right", UI.text(state, "pix", 10) }
+    local right = VerticalGroup:new{ align = "right" }
+    if state ~= "" then right[#right + 1] = UI.text(state, "pix", 10) end
     if button then
-        right[#right + 1] = UI.vspace(s(6))
+        if #right > 0 then right[#right + 1] = UI.vspace(s(6)) end
         right[#right + 1] = button
     end
     return VerticalGroup:new{ align = "left",
-        UI.vspace(s(10)), UI.spread(cw, left, right), UI.vspace(s(10)), UI.rule(cw, s(1), UI.INK3) }
+        UI.vspace(gap), UI.spread(cw, left, right), UI.vspace(gap), UI.rule(cw, s(1), UI.INK3) }
 end
 
-function Onboard:build()
+function Onboard:build(compact)
     local function s(n) return Screen:scaleBySize(n) end
     local W, H = self.dimen.w, self.dimen.h
     local m = math.floor(W * 0.045)
@@ -184,7 +197,14 @@ function Onboard:build()
         end, true, p:runner())
     elseif self.step == 3 then
         title("What the Ledger can see.", "None of these is required; each one adds something.")
-        add(UI.rule(cw, s(1), UI.INK3))
+        -- (two columns in landscape: six rows stacked run off the bottom)
+        local two = W > H
+        local colw = two and math.floor((cw - s(24)) / 2) or cw
+        local rows = {}
+        local real_add = add
+        local function checkRow_(...) local a = { ... }; a[1] = colw; a[6] = compact; return checkRow(unpack(a, 1, 6)) end
+        add = function(w) rows[#rows + 1] = w end
+        local checkRow = checkRow_
         local st = p:sourceStatus()
         local stats_on = p:statisticsOn()
         add(checkRow(cw, "Reading statistics", stats_on and "ON" or "OFF",
@@ -214,6 +234,18 @@ function Onboard:build()
                 function() p:openBookbridge() end, true, 10) or nil))
         add(checkRow(cw, "Hardcover", st.hardcover, "Your yearly goal, paid in fish. Uses your own API key.",
             UI.button(st.hardcover == "ADD KEY" and "Add key" or "Change", function() p:editHardcoverKey() end, true, 10)))
+        add = real_add
+        local function column(from, to)
+            local col = VerticalGroup:new{ align = "left", UI.rule(colw, s(1), UI.INK3) }
+            for i = from, to do col[#col + 1] = rows[i] end
+            return col
+        end
+        if two then
+            local half = math.ceil(#rows / 2)
+            add(HorizontalGroup:new{ align = "top", column(1, half), UI.hspace(s(24)), column(half + 1, #rows) })
+        else
+            add(column(1, #rows))
+        end
     else
         title("Make it your home screen?",
             "The Ledger opens when KOReader starts and when you close a book. Files stays one tap away, and Settings can turn this off.")
@@ -231,6 +263,8 @@ function Onboard:build()
         or UI.tappable(UI.text("SKIP SETUP", "pix", 10, UI.INK2), function() self:finish() end)
     local foot = UI.spread(cw, left, UI.button(next_label .. (self.step == STEPS and "" or " >"), function() self:go(self.step + 1) end))
     local used = main:getSize().h + foot:getSize().h + 2 * m
+    -- (the footer must stay on the screen: Next is the way on)
+    if used > H and not compact then return self:build(true) end
     return FrameContainer:new{
         background = UI.WHITE, bordersize = 0, margin = 0, padding = m,
         VerticalGroup:new{ align = "left", main, UI.vspace(math.max(0, H - used)), foot },

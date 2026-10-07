@@ -109,11 +109,10 @@ function Ledger:init()
         self:takeHomeButton()
         -- the file browser: show the Ledger on top when it's the home screen
         local show_now = (first_start or back_from_book) and self:homeOn()
-        -- just installed (copied in, or by Bookbridge): introduce itself
-        -- once, with its setup, rather than wait to be found in Tools
-        if first_start and not self.settings:readSetting("onboarded") and not self.settings:readSetting("introduced") then
-            self.settings:saveSetting("introduced", true)
-            self.settings:flush()
+        -- just installed (copied in, or by Bookbridge): the setup on start
+        -- until it's been finished or skipped, rather than waiting to be
+        -- found in Tools (a restart in the middle of it brings it back)
+        if first_start and not self.settings:readSetting("onboarded") then
             show_now = true
         end
         first_start, back_from_book = false, false
