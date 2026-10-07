@@ -1082,6 +1082,7 @@ function Ledger:refreshRemote(force)
         or os.time() - (c.trending_at or 0) >= TRENDING_EVERY
     local friends = self:friends()
     local week_start = self:weekStart()
+    local fetch_read = force or not c.hc_read or os.time() - (c.hc_read_at or 0) >= 86400
     Bg.run(function()
         local out = {}
         if token then
@@ -1090,6 +1091,8 @@ function Ledger:refreshRemote(force)
             -- the Library's Want to Read shelf
             if front then out.want = Net.hardcoverWant(token, 12, covers_dir) end
         end
+        -- your Read shelf (once a day): finished books known to Hardcover
+        if token and fetch_read then out.hc_read = Net.hardcoverRead(token, 300) end
         -- friends' reading (Hardcover): what they're reading, pages this week
         if token and #friends > 0 then
             out.friends = {}
@@ -1114,6 +1117,9 @@ function Ledger:refreshRemote(force)
             cache.trending, cache.trending_at = out.trending, os.time()
         end
         if out.friends then cache.friends, cache.friends_week = out.friends, week_start end
+        if out.hc_read then cache.hc_read, cache.hc_read_at = out.hc_read, os.time() end
+        if token == nil then cache.hc_read = nil end
+        self._finished = nil
         cache.fetched_at = os.time()
         self.cache = cache
         self:refreshRequests()
@@ -1395,6 +1401,57 @@ function Ledger:withNet(task, on_done)
         UIManager:close(wait)
         on_done(ok and r or nil)
     end, 30)
+end
+
+-- ---------------------------------------------------------------- finished books
+-- Every book you've finished, from three places: the race results (the
+-- statistics reached the end -- these carry the verdict), KOReader's own
+-- "finished" mark on this device, and your Hardcover Read shelf. One entry
+-- per book (by checksum, Hardcover id, then title and author).
+-- -> { { title, author, at, won, by, started, hash, hardcover_id } } newest first
+local function dayTime(d)
+    local y, m, dd = tostring(d or ""):match("^(%d%d%d%d)-(%d%d)-(%d%d)")
+    return y and os.time{ year = tonumber(y), month = tonumber(m), day = tonumber(dd), hour = 12 } or nil
+end
+
+function Ledger:finishedBooks()
+    if self._finished and self._finished.key == tostring(self:raceResults().key) then return self._finished.list end
+    local out, by_hash, by_hc, by_name = {}, {}, {}, {}
+    local matches = Data.hardcoverMatches() or {}
+    local function nameKey(t, a) return norm(t) .. "|" .. (a and norm(a):match("(%S+)$") or "") end
+    local function find(e)
+        return (e.hash and by_hash[e.hash]) or (e.hardcover_id and by_hc[e.hardcover_id])
+            or by_name[nameKey(e.title, e.author)] or by_name[nameKey(e.title)]
+    end
+    local function add(e)
+        local have = find(e)
+        if have then
+            for k, v in pairs(e) do if have[k] == nil then have[k] = v end end
+            e = have
+        else
+            out[#out + 1] = e
+        end
+        if e.hash then by_hash[e.hash] = e end
+        if e.hardcover_id then by_hc[e.hardcover_id] = e end
+        by_name[nameKey(e.title, e.author)] = e
+        by_name[nameKey(e.title)] = by_name[nameKey(e.title)] or e
+    end
+    for _, r in ipairs(self:raceResults().list) do
+        add({ title = r.title, author = r.author, at = r.at, won = r.won, by = r.by, started = r.started,
+            hash = r.hash, hardcover_id = r.hash and matches[r.hash] and matches[r.hash].book_id })
+    end
+    for _, rec in ipairs(Data.library(self:libraryDirs(), nil, matches)) do
+        if rec.status == "complete" then
+            add({ title = rec.title, author = rec.author, at = dayTime(rec.status_on) or rec.last_open,
+                hash = rec.hash, hardcover_id = rec.hardcover_id })
+        end
+    end
+    for _, h in ipairs((self.cache or {}).hc_read or {}) do
+        add({ title = h.title, author = h.author, at = dayTime(h.date), hardcover_id = h.id })
+    end
+    table.sort(out, function(a, b) return (a.at or 0) > (b.at or 0) end)
+    self._finished = { key = tostring(self:raceResults().key), list = out }
+    return out
 end
 
 -- Your year in reading (ledger_year.lua), on top of whichever page.

@@ -30,6 +30,7 @@ local results = {
     { title = "A", won = true, by = 12, at = t("2026-01-03"), started = t("2025-12-29") },
     { title = "B", won = false, at = t("2026-03-04"), started = t("2026-03-02") },
     { title = "C", won = true, by = 3, at = t("2025-12-31"), started = t("2025-12-01") },   -- last year's
+    { title = "D", at = t("2026-02-20") },   -- finished (KOReader's mark, Hardcover), no race to judge
 }
 local now = t("2026-03-10")
 local y = Year.compute(2026, habits, 33, results, now)
@@ -38,8 +39,8 @@ ck(y.days == 9, "days read: only days with pages, today included (" .. y.days ..
 ck(y.streak == 4, "best streak counts within the year, not across the new year (" .. y.streak .. ")")
 ck(y.best_day == 90 and y.best_day_on == "2026-02-10", "biggest day and its date")
 ck(y.months[1] == 60 and y.months[2] == 90 and y.months[3] == 20 + 33, "pages by month (today in March)")
-ck(#y.books == 2 and y.books[1].title == "B", "books finished this year, newest first; last year's left out")
-ck(y.won == 1 and y.lost == 1, "won and lost this year")
+ck(#y.books == 3 and y.books[1].title == "B", "books finished this year, newest first; last year's left out")
+ck(y.won == 1 and y.lost == 1, "won and lost: only the races judged (a book finished without one isn't a loss)")
 ck(y.quickest and y.quickest.title == "B" and y.quickest_days == 2, "quickest book: started to finished (" .. tostring(y.quickest_days) .. " days)")
 
 local y25 = Year.compute(2025, habits, 33, results, now)

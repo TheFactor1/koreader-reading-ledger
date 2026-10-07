@@ -350,6 +350,34 @@ function Net.hardcoverSeriesNext(token, book_id, covers_dir)
     return out
 end
 
+-- Your Hardcover "Read" shelf: { { id, title, author, date = "YYYY-MM-DD" } },
+-- newest first. One of the places a finished book is known from.
+function Net.hardcoverRead(token, limit)
+    local data, err = Net.hardcover(token, [[
+        query LedgerRead($limit: Int!) {
+            me {
+                user_books(where: {status_id: {_eq: 3}}, order_by: {last_read_date: desc_nulls_last}, limit: $limit) {
+                    book_id
+                    last_read_date
+                    book { title contributions(where: {contribution: {_eq: "Author"}}) { author { name } } }
+                }
+            }
+        }
+    ]], { limit = limit or 300 })
+    if not data then return nil, err end
+    local me = type(data.me) == "table" and data.me[1]
+    local out = {}
+    for _, ub in ipairs(type(me) == "table" and type(me.user_books) == "table" and me.user_books or {}) do
+        local b = type(ub) == "table" and type(ub.book) == "table" and ub.book
+        if b and str(b.title) then
+            local c = type(b.contributions) == "table" and b.contributions[1]
+            out[#out + 1] = { id = num(ub.book_id), title = str(b.title), date = str(ub.last_read_date),
+                author = type(c) == "table" and type(c.author) == "table" and str(c.author.name) or nil }
+        end
+    end
+    return out
+end
+
 -- ---------------------------------------------------------------- friends
 -- People you follow on Hardcover: { { id, username, name } }.
 function Net.hardcoverFollows(token)

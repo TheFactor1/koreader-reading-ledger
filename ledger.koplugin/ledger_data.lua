@@ -67,6 +67,7 @@ function Data.localRecord(file, last_open)
     rec.pct = tonumber(ds:readSetting("percent_finished"))
     local summary = ds:readSetting("summary") or {}
     rec.status = summary.status -- "reading" | "complete" | "abandoned" | nil
+    rec.status_on = type(summary.modified) == "string" and summary.modified or nil   -- "YYYY-MM-DD"
     rec.hash = ds:readSetting("partial_md5_checksum")
     rec.pages = tonumber((ds:readSetting("stats") or {}).pages) or tonumber(ds:readSetting("doc_pages"))
     return rec
@@ -696,9 +697,30 @@ function Data.bookTurns(hash, db_in)
                 if tot > out.total then out.total = tot end
             end
         end)
-    if #out.rows == 0 then out = nil end
+    out = Data.cleanTurns(out)
     if not db_in then db:close() end
     return out
+end
+
+-- Page turns that aren't this book: a document under MIN_BOOK pages (a
+-- README, a one-page stub, an error page saved as a download) isn't a book
+-- to race; and rows whose page count is under half the book's length come
+-- from another file under the same checksum (on Matt's Kindle a 404 page
+-- saved as "The Dark Forest" made the 919-page book read as finished).
+-- Another device's edition differs by a tenth, not a half. -> turns or nil
+local MIN_BOOK = 20
+function Data.cleanTurns(t)
+    if not t or not t.rows then return nil end
+    local total = 0
+    for _, r in ipairs(t.rows) do if r.tot > total then total = r.tot end end
+    if total < MIN_BOOK then return nil end
+    local keep = {}
+    for _, r in ipairs(t.rows) do
+        if r.tot >= MIN_BOOK and r.tot * 2 >= total then keep[#keep + 1] = r end
+    end
+    if #keep == 0 then return nil end
+    t.rows, t.total = keep, total
+    return t
 end
 
 -- An author as people say it: Calibre's "Liu, Cixin [Liu, Cixin]" and

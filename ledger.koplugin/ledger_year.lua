@@ -36,7 +36,8 @@ UI.refitOnResize(Year)
 
 -- What a year adds up to. habits: Data.allHabits() (days up to yesterday);
 -- today: pages today (counted apart: the replay never reads today);
--- results: Ledger:raceResults().list.
+-- results: the finished books (Ledger:finishedBooks(): won/by where the
+-- race could judge it).
 function Year.compute(year, habits, today, results, now)
     now = now or os.time()
     local days = {}
@@ -72,7 +73,7 @@ function Year.compute(year, habits, today, results, now)
     for _, r in ipairs(results or {}) do
         if r.at and tonumber(os.date("%Y", r.at)) == year then
             y.books[#y.books + 1] = r
-            if r.won then y.won = y.won + 1 else y.lost = y.lost + 1 end
+            if r.won == true then y.won = y.won + 1 elseif r.won == false then y.lost = y.lost + 1 end
             if r.started and r.at > r.started then
                 local took = math.max(1, math.ceil((r.at - r.started) / 86400))
                 if not y.quickest or took < y.quickest_days then y.quickest, y.quickest_days = r, took end
@@ -145,7 +146,7 @@ function Year:build()
     local first, last = Year.span(habits)
     local year = self.year or last
     local today = (year == last) and (p:readingCounts()) or 0
-    local y = Year.compute(year, habits, today, p:raceResults().list)
+    local y = Year.compute(year, habits, today, p:finishedBooks())
     local t0 = os.time{ year = year, month = 1, day = 1, hour = 0 }
     local t1 = os.time{ year = year + 1, month = 1, day = 1, hour = 0 }
     local hours = Data.readingSeconds(t0, t1) / 3600
@@ -228,7 +229,7 @@ function Year:build()
                 UI.text(r.title or "?", "bold", 12, UI.BLACK, math.floor(cw * 0.66)),
             }
             if r.author then left[#left + 1] = UI.text(r.author, "body", 10, UI.INK2, math.floor(cw * 0.66)) end
-            local verdict = r.won and string.format("WON BY %d", r.by or 0) or "LOST"
+            local verdict = r.won == true and string.format("WON BY %d", r.by or 0) or r.won == false and "LOST" or "FINISHED"
             local right = VerticalGroup:new{ align = "right",
                 UI.text(verdict, "pix", 9), UI.text(os.date("%d %b", r.at), "body", 10, UI.INK2) }
             local line = VerticalGroup:new{ align = "left",
