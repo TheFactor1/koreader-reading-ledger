@@ -740,9 +740,12 @@ function Data.finishedMarks(dirs)
         local key = hash or path
         if seen[key] then return end
         seen[key] = true
-        local title = type(props.title) == "string" and props.title ~= "" and props.title
-            or (path:match("([^/]+)%.sdr/[^/]+$") or "?"):gsub("%.[%w]+$", "")
-        out[#out + 1] = { title = title, hash = hash,
+        -- (a record written by a sync, not by reading, has no title: the
+        -- file's name, with its download tags taken off)
+        local loose = not (type(props.title) == "string" and props.title ~= "")
+        local title = not loose and props.title
+            or Data.nameFromFile(type(t.doc_path) == "string" and t.doc_path:match("([^/]+)$") or path:match("([^/]+)%.sdr/[^/]+$") or "?")
+        out[#out + 1] = { title = title, hash = hash, loose = loose,
             author = type(props.authors) == "string" and props.authors ~= "" and Data.authorName((props.authors:gsub("\n.*", ""))) or nil,
             status_on = type(summary.modified) == "string" and summary.modified or nil,
             changed = lfs.attributes(path, "modification") }
@@ -775,6 +778,18 @@ function Data.finishedMarks(dirs)
         if ok and d and lfs.attributes(d, "mode") == "directory" then walk(d, 1) end
     end
     return out
+end
+
+-- A book's name from its file name: "3 - The Last Town_ The Wayward Pines
+-- Trilogy - Blake Crouch.epub" -> "The Last Town The Wayward Pines Trilogy
+-- Blake Crouch" (extension, download tags, brackets, a leading number and
+-- the separators off; only for matching, and as a last resort for show).
+function Data.nameFromFile(name)
+    name = tostring(name or ""):gsub("%.[%w]+$", "")
+    name = name:gsub("%b[]", " "):gsub("%(Z%-Library%)", " "):gsub("Z%-Library", " "):gsub("%b()", " ")
+    name = name:gsub("^%s*%d+%s*[-._]%s*", ""):gsub("[_]", " "):gsub("%s+%-%s+", " - ")
+    name = name:gsub("%s+", " "):gsub("^%s+", ""):gsub("[%s%-]+$", "")
+    return name
 end
 
 -- An author as people say it: Calibre's "Liu, Cixin [Liu, Cixin]" and

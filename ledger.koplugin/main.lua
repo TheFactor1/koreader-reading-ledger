@@ -1436,17 +1436,40 @@ function Ledger:finishedBooks()
         by_name[nameKey(e.title, e.author)] = e
         by_name[nameKey(e.title)] = by_name[nameKey(e.title)] or e
     end
+    -- (in order of how good their dates are: the race's own, Hardcover's,
+    -- then KOReader's -- whose record may have been written by a sync)
     for _, r in ipairs(self:raceResults().list) do
         add({ title = r.title, author = r.author, at = r.at, won = r.won, by = r.by, started = r.started,
             hash = r.hash, hardcover_id = r.hash and matches[r.hash] and matches[r.hash].book_id })
     end
-    -- (from KOReader's book records, including those of deleted books)
-    for _, m in ipairs(Data.finishedMarks(self:libraryDirs())) do
-        add({ title = m.title, author = m.author, at = dayTime(m.status_on) or m.changed,
-            hash = m.hash, hardcover_id = m.hash and matches[m.hash] and matches[m.hash].book_id })
-    end
     for _, h in ipairs((self.cache or {}).hc_read or {}) do
         add({ title = h.title, author = h.author, at = dayTime(h.date), hardcover_id = h.id })
+    end
+    -- (from KOReader's book records, including those of deleted books; a
+    -- record with only a file name joins the book whose title it contains)
+    for _, m in ipairs(Data.finishedMarks(self:libraryDirs())) do
+        local e = { title = m.title, author = m.author, at = dayTime(m.status_on) or m.changed,
+            hash = m.hash, hardcover_id = m.hash and matches[m.hash] and matches[m.hash].book_id }
+        if m.loose and not find(e) then
+            local name = " " .. norm(m.title) .. " "
+            for _, have in ipairs(out) do
+                local t = norm(have.title)
+                if #t >= 3 and name:find(" " .. t .. " ", 1, true) then e.title, e.author = have.title, have.author; break end
+            end
+            -- (no match: an author we know, at the end of the name, comes off)
+            if not e.author then
+                for _, have in ipairs(out) do
+                    local a = have.author
+                    if a then
+                        local last = a:match("(%S+)$")
+                        local cut = m.title:gsub("%s*%-%s*" .. a:gsub("%p", "%%%0") .. "$", "")
+                        if cut == m.title and last then cut = m.title:gsub("%s*%-%s*" .. last:gsub("%p", "%%%0") .. "%s+%S+$", "") end
+                        if cut ~= m.title then e.title, e.author = cut, a; break end
+                    end
+                end
+            end
+        end
+        add(e)
     end
     table.sort(out, function(a, b) return (a.at or 0) > (b.at or 0) end)
     self._finished = { key = tostring(self:raceResults().key), list = out }
