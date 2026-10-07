@@ -1072,7 +1072,9 @@ end
 function Ledger:refreshRemote(force)
     if not NetworkMgr:isOnline() then return end
     local c = self.cache or {}
-    if not force and c.fetched_at and os.time() - c.fetched_at < REFRESH_EVERY then return end
+    -- (an older Read shelf, without series: fetched again at once)
+    local stale_read = self:hardcoverToken() and c.hc_read_v ~= 2
+    if not force and not stale_read and c.fetched_at and os.time() - c.fetched_at < REFRESH_EVERY then return end
     if self._refreshing then return end
     self._refreshing = true
 
@@ -1082,7 +1084,8 @@ function Ledger:refreshRemote(force)
         or os.time() - (c.trending_at or 0) >= TRENDING_EVERY
     local friends = self:friends()
     local week_start = self:weekStart()
-    local fetch_read = force or not c.hc_read or os.time() - (c.hc_read_at or 0) >= 86400
+    -- (v2: with each book's series, to know a record named "Series - 02 ...")
+    local fetch_read = force or not c.hc_read or c.hc_read_v ~= 2 or os.time() - (c.hc_read_at or 0) >= 86400
     Bg.run(function()
         local out = {}
         if token then
@@ -1117,7 +1120,7 @@ function Ledger:refreshRemote(force)
             cache.trending, cache.trending_at = out.trending, os.time()
         end
         if out.friends then cache.friends, cache.friends_week = out.friends, week_start end
-        if out.hc_read then cache.hc_read, cache.hc_read_at = out.hc_read, os.time() end
+        if out.hc_read then cache.hc_read, cache.hc_read_at, cache.hc_read_v = out.hc_read, os.time(), 2 end
         if token == nil then cache.hc_read = nil end
         self._finished = nil
         cache.fetched_at = os.time()
@@ -1443,7 +1446,8 @@ function Ledger:finishedBooks()
             hash = r.hash, hardcover_id = r.hash and matches[r.hash] and matches[r.hash].book_id })
     end
     for _, h in ipairs((self.cache or {}).hc_read or {}) do
-        add({ title = h.title, author = h.author, at = dayTime(h.date), hardcover_id = h.id })
+        add({ title = h.title, author = h.author, at = dayTime(h.date), hardcover_id = h.id,
+            series = h.series, position = h.position })
     end
     -- (from KOReader's book records, including those of deleted books; a
     -- record with only a file name joins the book whose title it contains)
@@ -1457,6 +1461,18 @@ function Ledger:finishedBooks()
                 -- (the name starts with the title: "Pines" is inside "Wayward
                 -- Pines - 02 Wayward" but that's book 2, not Pines)
                 if #t >= 3 and name:sub(1, #t + 2) == " " .. t .. " " then e.title, e.author = have.title, have.author; break end
+            end
+            -- (or its series and its number in it: "Wayward Pines - 02 Wayward"
+            -- is book 2 of Wayward Pines, whatever the edition is called)
+            if not e.author then
+                for _, have in ipairs(out) do
+                    local sname, pos = have.series and norm(have.series), have.position
+                    if sname and #sname >= 3 and pos and pos == math.floor(pos) and name:find(" " .. sname .. " ", 1, true) then
+                        local hit = false
+                        for n in name:gmatch("%d+") do if tonumber(n) == pos then hit = true end end
+                        if hit then e.title, e.author = have.title, have.author; break end
+                    end
+                end
             end
             -- (no match: an author we know, at the end of the name, comes off)
             if not e.author then

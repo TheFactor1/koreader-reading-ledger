@@ -359,7 +359,11 @@ function Net.hardcoverRead(token, limit)
                 user_books(where: {status_id: {_eq: 3}}, order_by: {last_read_date: desc_nulls_last}, limit: $limit) {
                     book_id
                     last_read_date
-                    book { title contributions(where: {contribution: {_eq: "Author"}}) { author { name } } }
+                    book {
+                        title
+                        contributions(where: {contribution: {_eq: "Author"}}) { author { name } }
+                        book_series(where: {compilation: {_eq: false}}, order_by: {featured: desc}, limit: 1) { position series { name } }
+                    }
                 }
             }
         }
@@ -371,8 +375,11 @@ function Net.hardcoverRead(token, limit)
         local b = type(ub) == "table" and type(ub.book) == "table" and ub.book
         if b and str(b.title) then
             local c = type(b.contributions) == "table" and b.contributions[1]
+            local bs = type(b.book_series) == "table" and b.book_series[1]
             out[#out + 1] = { id = num(ub.book_id), title = str(b.title), date = str(ub.last_read_date),
-                author = type(c) == "table" and type(c.author) == "table" and str(c.author.name) or nil }
+                author = type(c) == "table" and type(c.author) == "table" and str(c.author.name) or nil,
+                series = type(bs) == "table" and type(bs.series) == "table" and str(bs.series.name) or nil,
+                position = type(bs) == "table" and num(bs.position) or nil }
         end
     end
     return out
