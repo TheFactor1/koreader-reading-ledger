@@ -1134,6 +1134,97 @@ function Ledger:showShelfBook(rec)
     return self:showTrending(rec)
 end
 
+-- ---------------------------------------------------------------- series
+-- What comes after a finished book in its series. From Hardcover (your
+-- key, the book matched by Bookbridge): the series in order, the first
+-- book after it you haven't read. Without Hardcover, the book's own
+-- series and number, and only a next book that's already on this device.
+local SERIES_EVERY = 7 * 86400
+
+local function norm(s) return (tostring(s or ""):lower():gsub("[%p%s]+", " "):gsub("^ ", ""):gsub(" $", "")) end
+
+-- A book on this device by its title (and author when given), or by its
+-- Hardcover id through Bookbridge's matches.
+function Ledger:findOnDevice(title, author, hardcover_id)
+    local books = Data.library(self:libraryDirs(), nil, Data.hardcoverMatches())
+    local t, a = norm(title), author and norm(author)
+    for _, rec in ipairs(books) do
+        if hardcover_id and rec.hardcover_id == hardcover_id then return rec end
+        if t ~= "" and norm(rec.title) == t and (not a or not rec.author or norm(rec.author):find(a:match("(%S+)$") or a, 1, true)) then
+            return rec
+        end
+    end
+end
+
+-- -> { series, position, next = { title, author, year, position, cover,
+-- on_device } } for a finished race result, or nil (not known yet: asked
+-- in the background, on_change when it lands).
+function Ledger:seriesNext(res, on_change)
+    if not res or not res.hash then return nil end
+    self.cache = self.cache or Data.loadCache()
+    local c = self.cache
+    c.series_next = c.series_next or {}
+    local known = c.series_next[res.hash]
+    local fresh = known and os.time() - (known.at or 0) < SERIES_EVERY
+    local token = self:hardcoverToken()
+    local match = (Data.hardcoverMatches() or {})[res.hash]
+    if token and match and not fresh and not self._series_busy and NetworkMgr:isOnline() then
+        self._series_busy = true
+        local dir = Data.coversDir()
+        Bg.run(function() return Net.hardcoverSeriesNext(token, match.book_id, dir) end, function(ok, out)
+            self._series_busy = false
+            -- (no answer: not asked again for a day, not on every redraw)
+            if not ok or type(out) ~= "table" then out = { failed = true, at = os.time() - SERIES_EVERY + 86400 } end
+            out.at = out.at or os.time()
+            local cc = self.cache or {}
+            cc.series_next = cc.series_next or {}
+            cc.series_next[res.hash] = out
+            self.cache = cc
+            Data.saveCache(cc)
+            if on_change and out.next then on_change() end
+        end, 45)
+    end
+    if known and known.series and known.next then return known end
+    if token and match then return nil end
+    -- no Hardcover: the book's own series, and a next one on this device
+    self._series_local = self._series_local or {}
+    local loc = self._series_local[res.hash]
+    if loc == nil then
+        loc = false
+        local books = Data.library(self:libraryDirs(), nil, nil)
+        local done
+        for _, rec in ipairs(books) do if rec.hash == res.hash then done = rec end end
+        if done and done.series and done.series_index then
+            local best
+            for _, rec in ipairs(books) do
+                if rec.series == done.series and rec.series_index and rec.series_index > done.series_index
+                        and not Data.isFinished(rec) and (not best or rec.series_index < best.series_index) then
+                    best = rec
+                end
+            end
+            if best then
+                loc = { series = done.series, position = done.series_index, next = { title = best.title,
+                    author = best.author, position = best.series_index, on_device = best } }
+            end
+        end
+        self._series_local[res.hash] = loc
+    end
+    return loc or nil
+end
+
+-- Open what's next: the book itself when it's here, else what Bookbridge
+-- can do for it.
+function Ledger:openSeriesNext(sn, after_title)
+    local nx = sn and sn.next
+    if not nx then return end
+    local here = nx.on_device or self:findOnDevice(nx.title, nx.author, nx.id)
+    if here then return self:showBook(here) end
+    local pos = nx.position and (nx.position == math.floor(nx.position) and tostring(math.floor(nx.position)) or tostring(nx.position))
+    self:showTrending({ title = nx.title, author = nx.author, year = nx.year, cover_file = nx.cover,
+        source = string.format(_("Book %s of %s, after %s."), pos or "?", sn.series or "the series", after_title or "the one you finished")
+            .. (nx.status_id == 1 and (" " .. _("It's on your Want to Read shelf.")) or "") })
+end
+
 -- Your year in reading (ledger_year.lua), on top of whichever page.
 function Ledger:showYear(year)
     if self.year_page and UIManager:isWidgetShown(self.year_page) then UIManager:close(self.year_page) end

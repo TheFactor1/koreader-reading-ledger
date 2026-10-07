@@ -266,6 +266,12 @@ function Reading:build(squeeze)
                 last.by or 0, (last.by or 0) == 1 and "page" or "pages")
             or string.format("You finished %s, but %s got to the flag first. Rematch?", title, rival_name)
         add(UI.tappable(UI.para(said, "bold", 13, cw), function() plugin:showResults() end))
+        local sn = plugin:seriesNext(last, function() plugin:redraw() end)
+        if sn and sn.next and sn.next.title then
+            add(UI.vspace(s(6)))
+            add(UI.tappable(UI.para(string.format("Next in %s: %s ›", sn.series or "the series", sn.next.title),
+                "body", 12, cw), function() plugin:openSeriesNext(sn, last.title) end))
+        end
         gap(s(12))
     end
 

@@ -69,6 +69,10 @@ Three pages, switched by a tab bar at the bottom (2026-10-04):
   they are. A line for today's race, today / this week / streak, new arrivals
   and what's on order, the yearly goal in fish.
   Several books on the go: swipe or tap < > to switch.
+- **What's next in a series**: finish a book and, under "You finished...",
+  the next one in its series -- from Hardcover with your key (the series in
+  order, skipping the ones you've read there), otherwise from the books' own
+  series and number on this device. Tap: the book, or Bookbridge to get it.
 - **Your year** (tap today / this week / streak): pages, books, days read and
   hours; your best streak, biggest day, the race record and the quickest book;
   pages month by month and the books you finished -- from the statistics, so

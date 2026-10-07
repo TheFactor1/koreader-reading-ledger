@@ -245,6 +245,90 @@ function Net.hardcoverUserBook(token, book_id)
 end
 
 -- Checks a key: returns the username, or nil + "rejected"/error.
+-- The book after this one in its series, from Hardcover: the series in
+-- order, one book per position, without compilations, partial editions or
+-- merged duplicates (Hardcover's own guide, "Getting All Books in a
+-- Series"), then the first one after this book that you haven't read.
+-- -> { series, position, next = { id, title, author, year, position, cover,
+--    status_id } | nil } or nil, err
+function Net.hardcoverSeriesNext(token, book_id, covers_dir)
+    local data, err = Net.hardcover(token, [[
+        query LedgerSeries($id: Int!) {
+            books_by_pk(id: $id) {
+                book_series(where: {compilation: {_eq: false}}, order_by: {featured: desc}, limit: 1) {
+                    position
+                    series {
+                        name
+                        book_series(
+                            distinct_on: position
+                            order_by: [{position: asc}, {book: {users_count: desc}}]
+                            where: {book: {canonical_id: {_is_null: true}, is_partial_book: {_eq: false}}, compilation: {_eq: false}}
+                        ) {
+                            position
+                            book {
+                                id
+                                title
+                                release_year
+                                cached_image
+                                contributions(where: {contribution: {_eq: "Author"}}) { author { name } }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]], { id = book_id })
+    if not data then return nil, err end
+    local b = type(data.books_by_pk) == "table" and data.books_by_pk
+    local bs = b and type(b.book_series) == "table" and b.book_series[1]
+    local series = type(bs) == "table" and type(bs.series) == "table" and bs.series
+    local here = type(bs) == "table" and num(bs.position)
+    if not series or not here then return { none = true } end
+    local out = { series = str(series.name), position = here }
+    -- the books after this one: whole numbers first (a 2.5 is a novella)
+    local after = {}
+    for _, e in ipairs(type(series.book_series) == "table" and series.book_series or {}) do
+        local pos = type(e) == "table" and num(e.position)
+        local bk = type(e) == "table" and type(e.book) == "table" and e.book
+        if pos and bk and num(bk.id) and pos > here then
+            local c = type(bk.contributions) == "table" and bk.contributions[1]
+            after[#after + 1] = { id = num(bk.id), title = str(bk.title), year = num(bk.release_year), position = pos,
+                author = type(c) == "table" and type(c.author) == "table" and str(c.author.name) or nil,
+                image = type(bk.cached_image) == "table" and str(bk.cached_image.url) or nil }
+        end
+    end
+    if #after == 0 then return out end
+    -- skip the ones you've already read (Hardcover status 3)
+    local ids = {}
+    for _, a in ipairs(after) do ids[#ids + 1] = a.id end
+    local mine = Net.hardcover(token, [[
+        query LedgerSeriesMine($ids: [Int!]) {
+            me { user_books(where: {book_id: {_in: $ids}}) { book_id status_id } }
+        }
+    ]], { ids = ids })
+    local status = {}
+    local me = type(mine) == "table" and type(mine.me) == "table" and mine.me[1]
+    for _, ub in ipairs(type(me) == "table" and type(me.user_books) == "table" and me.user_books or {}) do
+        if type(ub) == "table" and num(ub.book_id) then status[num(ub.book_id)] = num(ub.status_id) end
+    end
+    local pick
+    for _, whole in ipairs({ true, false }) do
+        for _, a in ipairs(after) do
+            if status[a.id] ~= 3 and (not whole or a.position == math.floor(a.position)) then pick = a; break end
+        end
+        if pick then break end
+    end
+    if pick then
+        pick.status_id = status[pick.id]
+        if pick.image and covers_dir then
+            pick.cover = Net.fetchFile(pick.image, string.format("%s/hc-%d.jpg", covers_dir, pick.id))
+        end
+        pick.image = nil
+        out.next = pick
+    end
+    return out
+end
+
 function Net.hardcoverWhoAmI(token)
     local data, err = Net.hardcover(token, "query { me { username } }")
     if not data then return nil, err end
