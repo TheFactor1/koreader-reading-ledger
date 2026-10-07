@@ -52,8 +52,21 @@ for _, r in ipairs(s) do if r.title == "Shining Rock" or r.title == "The Androme
 ck(not rejected_listed, "the 4 rejected requests aren't 'waiting' (they made the screen say 'waiting for 4')")
 ck(Data.requestState(ROWS[2], now, onDevice) == nil, "delivered a month ago: off the shelf (two weeks at most)")
 on["Heir to the Empire"] = true
-ck(#shelf() == 0, "on the Kindle: off the shelf")
+s = shelf()
+ck(#s == 1 and s[1].state == "arrived", "on the Kindle: still listed for two weeks, as arrived (easy to find)")
 on["Heir to the Empire"] = nil
+local _st, _t, _a, extra = Data.requestState(ROWS[#ROWS], now, onDevice)
+ck(extra and extra.requested == Data.utcTime("2026-10-07 19:49:23"), "when it was asked for comes along (newest first on the shelf)")
+local old = { status = "pending", delivery_state = "none", created_at = "2026-09-01 10:00:00", book_data = { title = "Old One" } }
+on["Old One"] = true
+ck(Data.requestState(old, now, onDevice) == nil, "here another way and asked for long ago: not listed")
+ck(Data.requestState({ status = "pending", delivery_state = "none", created_at = "2026-10-07 19:00:00", book_data = { title = "Old One" } }, now, onDevice) == "arrived",
+    "here another way, asked for today: arrived")
+on["Old One"] = nil
+local withCover = { status = "pending", delivery_state = "none", created_at = "2026-10-07 19:00:00",
+    book_data = { title = "C", cover_path = "/mnt/us/koreader/shelfmark_covers/x.jpg", publish_year = 1991 } }
+local _s2, _t2, _a2, ex2 = Data.requestState(withCover, now, onDevice)
+ck(ex2.cover == "/mnt/us/koreader/shelfmark_covers/x.jpg" and ex2.year == 1991, "the cover Bookbridge kept when you asked, and the year")
 
 -- the states before delivery
 ck(Data.requestState({ status = "pending", delivery_state = "none", book_data = { title = "X" } }, now, onDevice) == "pending",

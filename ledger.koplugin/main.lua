@@ -1235,6 +1235,10 @@ end
 -- to request it.
 function Ledger:showShelfBook(rec)
     if rec.on_device then return self:openBook(rec.on_device) end
+    if rec.requested and rec.state == "arrived" then
+        local here = self:findOnDevice(rec.title, rec.author)
+        if here then return self:openBook(here) end
+    end
     if rec.requested and rec.state == "ready" and self:bookbridge() then
         -- delivered to Calibre-Web: Bookbridge fetches it from there
         local bb = self:bookbridge()
@@ -1740,6 +1744,7 @@ local REQUEST_NOTE = {
     pending = "waiting for approval on Shelfmark",
     coming = "approved: Shelfmark is getting it",
     ready = "on your server: tap to get it",
+    arrived = "on this device",
 }
 
 function Ledger:refreshRequests()
@@ -1755,11 +1760,17 @@ function Ledger:refreshRequests()
         local waiting, now = {}, os.time()
         local function onDevice(title, author) return title and self:findOnDevice(title, author) ~= nil end
         for _, r in ipairs(list) do
-            local state, title, author = Data.requestState(r, now, onDevice)
+            local state, title, author, extra = Data.requestState(r, now, onDevice)
             if state then
-                waiting[#waiting + 1] = { title = title or "?", author = author, state = state, note = REQUEST_NOTE[state] }
+                extra = extra or {}
+                -- (the cover Bookbridge kept when you asked, if it's still here)
+                local cover = extra.cover and lfs.attributes(extra.cover, "mode") == "file" and extra.cover or nil
+                waiting[#waiting + 1] = { title = title or "?", author = author, state = state, note = REQUEST_NOTE[state],
+                    cover = cover, year = extra.year, requested = extra.requested }
             end
         end
+        -- newest request first
+        table.sort(waiting, function(a, b) return (a.requested or 0) > (b.requested or 0) end)
         self.cache.requests = waiting
         Data.saveCache(self.cache)
         self:redraw()

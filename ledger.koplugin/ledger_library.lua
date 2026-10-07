@@ -26,9 +26,10 @@ local FILTERS = {
 }
 -- Shelves of books from outside the device, behind the "More" button.
 local SHELVES = {
+    { id = "series", label = "Series", hint = "Books in a series, together and in order" },
     { id = "trending", label = "Trending", hint = "This week on Open Library" },
     { id = "want", label = "Want to read", hint = "Your Hardcover shelf" },
-    { id = "requested", label = "Requested", hint = "Asked for through Bookbridge, not here yet" },
+    { id = "requested", label = "Requested", hint = "Your requests, newest first" },
 }
 local SHELF = {}
 for _, f in ipairs(SHELVES) do SHELF[f.id] = f end
@@ -102,6 +103,11 @@ function Library:shelfList(items, extra)
                 on_device = have[tostring(item.title):lower()],
                 state = item.state,
             }
+            -- (here already: its own file's cover when there's no other)
+            if rec.on_device then
+                rec.file = rec.on_device.file
+                rec.cover_file = rec.cover_file or rec.on_device.cover_file
+            end
             for k, v in pairs(extra or {}) do rec[k] = v end
             list[#list + 1] = rec
         end
@@ -140,6 +146,10 @@ function Library:refilter()
     elseif self.filter == "requested" then
         self.list = self:shelfList(c.requests, { requested = true })
         return
+    elseif self.filter == "series" then
+        self.series_groups = Library.seriesGroups(self.books)
+        self.list = {}   -- (laid out in build, once the columns are known)
+        return
     end
     local list = {}
     for _, rec in ipairs(self.books or {}) do
@@ -165,6 +175,55 @@ function Library:refilter()
         return lower(a.title) < lower(b.title)
     end)
     self.list = list
+end
+
+-- The Series shelf (Matt, 2026-10-07: "separating trilogy and series books
+-- so they're easy to find"): your books that are in a series, by series
+-- name, each series in its own order. -> { { name, books }, ... }
+function Library.seriesGroups(books)
+    local groups, by = {}, {}
+    for _, rec in ipairs(books or {}) do
+        if type(rec.series) == "string" and rec.series ~= "" then
+            local k = lower(rec.series)
+            if not by[k] then by[k] = { name = rec.series, books = {} }; groups[#groups + 1] = by[k] end
+            table.insert(by[k].books, rec)
+        end
+    end
+    table.sort(groups, function(a, b) return lower(a.name) < lower(b.name) end)
+    for _, g in ipairs(groups) do
+        table.sort(g.books, function(a, b)
+            if (a.series_index or 1e9) ~= (b.series_index or 1e9) then return (a.series_index or 1e9) < (b.series_index or 1e9) end
+            return lower(a.title) < lower(b.title)
+        end)
+    end
+    return groups
+end
+
+-- The groups as grid cells: each series starts a row with a card naming
+-- it, then its books ("#1", "#2" under each title); blanks fill out the
+-- row so the next series starts on its own.
+function Library.seriesCells(groups, cols)
+    local out = {}
+    local function num(v) return v and (tostring(v):gsub("%.0+$", "")) or nil end
+    for _, g in ipairs(groups or {}) do
+        -- (the numbers you have, lowest to highest: an unnumbered extra doesn't count)
+        local lo, hi
+        for _, rec in ipairs(g.books) do
+            local i = tonumber(rec.series_index)
+            if i then lo = math.min(lo or i, i); hi = math.max(hi or i, i) end
+        end
+        local first, last = num(lo), num(hi)
+        out[#out + 1] = { series_header = true, title = g.name, count = #g.books,
+            range = first and last and (first == last and ("#" .. first) or ("#" .. first .. "-" .. last)) or nil }
+        for _, rec in ipairs(g.books) do
+            local n = num(rec.series_index)
+            out[#out + 1] = setmetatable({ orig = rec,
+                author = (n and ("#" .. n) or "") .. (rec.author and ((n and " · " or "") .. rec.author) or "") },
+                { __index = rec })
+        end
+        while #out % cols ~= 0 do out[#out + 1] = { blank = true } end
+    end
+    return out
 end
 
 function Library:redraw()
@@ -243,8 +302,11 @@ end
 
 local function statusOf(rec)
     if rec.trending then
+        if rec.requested then
+            if rec.on_device or rec.state == "arrived" then return "finished", nil, "ARRIVED" end
+            return "unread", nil, rec.state == "ready" and "READY" or "WAITING"
+        end
         if rec.on_device then return "finished", nil, "ON DEVICE" end
-        if rec.requested then return "unread", nil, rec.state == "ready" and "READY" or "WAITING" end
         return "unread", nil, rec.year and tostring(rec.year) or nil
     end
     local st = Data.status(rec)
@@ -311,6 +373,29 @@ end
 function Library:tile(rec, w, h, text_w)
     text_w = text_w or w
     local function s(n) return Screen:scaleBySize(n) end
+    if rec.blank then return UI.hspace(text_w) end
+    if rec.series_header then
+        -- a card the size of a cover: the series, and how many you have
+        -- (everything inside its border: the name a size smaller until it
+        -- fits, the count on its own short lines)
+        local TopContainer = require("ui/widget/container/topcontainer")
+        local pad, bw = s(10), s(2)
+        local inner_w, inner_h = w - 2 * pad - 2 * bw, h - 2 * pad - 2 * bw
+        local counts = VerticalGroup:new{ align = "left",
+            UI.text(string.format("%d %s", rec.count, rec.count == 1 and "BOOK" or "BOOKS"), "pix", 9, UI.INK2, inner_w) }
+        if rec.range then counts[#counts + 1] = UI.text(rec.range, "pix", 9, UI.INK2, inner_w) end
+        local gap_h = s(8)
+        local size, name = 12
+        repeat
+            if name then name:free() end
+            name = UI.para(rec.title, "bold", size, inner_w)
+            size = size - 1
+        until name:getSize().h + gap_h + counts:getSize().h <= inner_h or size < 7
+        local inner = VerticalGroup:new{ align = "left", name, UI.vspace(gap_h), counts }
+        return FrameContainer:new{ bordersize = bw, color = UI.BLACK, background = UI.WHITE, margin = 0,
+            padding = pad, width = w, height = h,
+            TopContainer:new{ dimen = Geom:new{ w = inner_w, h = inner_h }, inner } }
+    end
     local style = barStyle()
     local st, pct, label = statusOf(rec)
     local vg = VerticalGroup:new{ align = "left" }
@@ -356,6 +441,7 @@ function Library:tile(rec, w, h, text_w)
     if rec.trending then
         return UI.tappable(cell, function() self.plugin:showShelfBook(rec) end)
     end
+    rec = rec.orig or rec   -- (the Series shelf's caption aside, the book itself)
     return UI.tappable(cell, function() self.plugin:openBook(rec) end, function()
         if rec.file then self.plugin:showFileMenu(rec) else self.plugin:showBook(rec) end
     end)
@@ -416,6 +502,7 @@ function Library:build()
     local function layout(with_nav)
         -- four across on anything Paperwhite-sized or bigger, three on small screens
         local cols = cw >= s(420) and 4 or 3
+        if self.filter == "series" then self.list = Library.seriesCells(self.series_groups, cols) end
         local gap = s(12)
         local tile_w = math.floor((cw - (cols - 1) * gap) / cols)
         local text_h = self:captionHeight(tile_w)
@@ -479,7 +566,8 @@ function Library:build()
             trending = "Nothing here yet. Trending books come from Open Library when you're online.",
             want = self.plugin:hardcoverToken() and "Nothing on your Want to Read shelf yet, or it hasn't loaded: it comes with the next refresh."
                 or "Add your Hardcover key in Settings to see your Want to Read shelf here.",
-            requested = "Nothing waiting. Books you request through Bookbridge show up here until they arrive." }
+            requested = "Nothing waiting. Books you request through Bookbridge show up here until they arrive.",
+            series = "No books in a series yet. A book's series comes from the book itself, or from Calibre-Web when Bookbridge downloads it." }
         if vibeId(self.filter) then
             empty[self.filter] = self.vibe_loading and "Asking Hardcover for this vibe's books..."
                 or "Nothing new in this vibe -- you've read or shelved everything it found."
@@ -515,7 +603,10 @@ function Library:visible()
     local out = {}
     local per_page = self.per_page or 12
     local first = (self.page - 1) * per_page + 1
-    for i = first, math.min(#self.list, first + per_page - 1) do out[#out + 1] = self.list[i] end
+    for i = first, math.min(#self.list, first + per_page - 1) do
+        local rec = self.list[i]
+        if not (rec.blank or rec.series_header) then out[#out + 1] = rec.orig or rec end   -- (books only)
+    end
     return out
 end
 

@@ -333,7 +333,7 @@ function Reading:build(squeeze)
     local n_new = #(d.just_in or {})
     local n_wait, n_ready = 0, 0
     for _, r in ipairs(c.requests or {}) do
-        if r.state == "ready" then n_ready = n_ready + 1 else n_wait = n_wait + 1 end
+        if r.state == "ready" then n_ready = n_ready + 1 elseif r.state ~= "arrived" then n_wait = n_wait + 1 end
     end
     -- two links: the new ones, and -- with a book server, where requests
     -- can wait -- the ones on order (the Requested shelf)

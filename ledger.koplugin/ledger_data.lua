@@ -44,13 +44,39 @@ local function readJSONFile(path)
     return ok and type(d) == "table" and d or nil
 end
 
+-- A series name that is one ("N/A" is what a book without one can say).
+local function realSeries(v) return type(v) == "string" and v ~= "" and v ~= "N/A" and v or nil end
+
+-- What was set for a book in KOReader's own record of it -- Book
+-- information > edit, or Bookbridge with a series from Calibre-Web
+-- (custom_metadata.lua beside the book): it wins over the file's own.
+function Data.customProps(file)
+    local ok, cf = pcall(DocSettings.findCustomMetadataFile, DocSettings, file)
+    if not ok or not cf then return nil end
+    local ok2, cs = pcall(DocSettings.openSettingsFile, cf)
+    local custom = ok2 and cs and cs:readSetting("custom_props")
+    return type(custom) == "table" and next(custom) and custom or nil
+end
+
+function Data.applyCustom(rec, custom)
+    if not custom then return rec end
+    if type(custom.title) == "string" and custom.title ~= "" then rec.title = custom.title end
+    if type(custom.authors) == "string" and custom.authors ~= "" then
+        rec.author = Data.authorName((custom.authors:gsub("\n.*", "")))
+    end
+    if realSeries(custom.series) then
+        rec.series, rec.series_index = custom.series, tonumber(custom.series_index)
+    end
+    return rec
+end
+
 -- What this device knows about one file. Returns a record or nil.
 function Data.localRecord(file, last_open)
     if lfs.attributes(file, "mode") ~= "file" then return nil end
     local rec = { file = file, last_open = last_open, title = basenameTitle(file) }
     if not DocSettings:hasSidecarFile(file) then
         rec.opened = false
-        return rec
+        return Data.applyCustom(rec, Data.customProps(file))
     end
     local ok, ds = pcall(DocSettings.open, DocSettings, file)
     if not ok or not ds then return rec end
@@ -60,10 +86,11 @@ function Data.localRecord(file, last_open)
     if type(props.authors) == "string" and props.authors ~= "" then
         rec.author = Data.authorName((props.authors:gsub("\n.*", "")))
     end
-    if type(props.series) == "string" and props.series ~= "" then
+    if realSeries(props.series) then
         rec.series = props.series
         rec.series_index = tonumber(props.series_index)
     end
+    Data.applyCustom(rec, Data.customProps(file))
     rec.pct = tonumber(ds:readSetting("percent_finished"))
     local summary = ds:readSetting("summary") or {}
     rec.status = summary.status -- "reading" | "complete" | "abandoned" | nil
@@ -175,11 +202,12 @@ function Data.library(dirs, readest, matches)
                 if (guessed or not rec.author) and type(info.authors) == "string" and info.authors ~= "" then
                     rec.author = Data.authorName((info.authors:gsub("\n.*", "")))
                 end
-                if not rec.series and type(info.series) == "string" and info.series ~= "" then
+                if not rec.series and realSeries(info.series) then
                     rec.series, rec.series_index = info.series, tonumber(info.series_index)
                 end
             end
         end
+        if not rec.opened then Data.applyCustom(rec, Data.customProps(path)) end
         rec.added = attr.modification
         rec.last_open = last_open[path]
         Data.enrich(rec, readest, matches)
@@ -847,6 +875,10 @@ end
 -- What each of Shelfmark's requests means here: "pending", "coming",
 -- "ready", or nil (not waiting). on_device(title, author) says whether it
 -- has arrived.
+-- -> state ("pending", "coming", "ready", "arrived"), title, author,
+-- extra ({ cover = the cover Bookbridge kept when you asked, requested =
+-- when, year }) | nil. A book that arrived stays two weeks too, marked so
+-- (Matt, 2026-10-07: "easier overall to find what you requested recently").
 function Data.requestState(r, now, on_device)
     if type(r) ~= "table" then return nil end
     local st, ds = r.status, r.delivery_state
@@ -855,14 +887,22 @@ function Data.requestState(r, now, on_device)
     local bd = type(r.book_data) == "table" and r.book_data or {}
     local title = type(r.title) == "string" and r.title or bd.title
     local author = type(bd.author) == "string" and bd.author or nil
+    local requested = Data.utcTime(r.created_at)
+    local extra = { requested = requested,
+        cover = type(bd.cover_path) == "string" and bd.cover_path ~= "" and bd.cover_path or nil,
+        year = tonumber(bd.publish_year) }
+    local here = on_device and title and on_device(title, author)
     if ds == "complete" then
-        local at = Data.utcTime(r.delivery_updated_at) or Data.utcTime(r.reviewed_at) or Data.utcTime(r.created_at)
+        local at = Data.utcTime(r.delivery_updated_at) or Data.utcTime(r.reviewed_at) or requested
         if not at or now - at > READY_KEEP then return nil end
-        if on_device and on_device(title, author) then return nil end
-        return "ready", title, author
+        return here and "arrived" or "ready", title, author, extra
     end
-    if on_device and title and on_device(title, author) then return nil end
-    return st == "pending" and "pending" or "coming", title, author
+    if here then
+        -- (already here another way: shown as arrived while it's recent)
+        if requested and now - requested <= READY_KEEP then return "arrived", title, author, extra end
+        return nil
+    end
+    return st == "pending" and "pending" or "coming", title, author, extra
 end
 
 return Data
