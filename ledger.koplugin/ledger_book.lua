@@ -82,7 +82,9 @@ function Book:build()
         UI.text("BOOK", "pix", 11)))
 
     -- cover and details
-    local cover_w = math.floor(cw * 0.32)
+    -- (by the height too: a width-sized cover in landscape pushed the
+    -- rival's room off the bottom)
+    local cover_w = math.floor(math.min(cw * 0.32, H * 0.33 / 1.5))
     local cover = UI.cover(rec, cover_w, math.floor(cover_w * 1.5))
     local info_w = cw - cover_w - s(14)
     local title = UI.para(rec.title or "?", "bold", 18, info_w)
