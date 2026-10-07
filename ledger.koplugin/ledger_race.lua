@@ -66,10 +66,33 @@ local function noon(t)
     local d = os.date("*t", t)
     return os.time{ year = d.year, month = d.month, day = d.day, hour = 12 }
 end
-local function dateOf(t) return os.date("%Y-%m-%d", t) end
+-- (remembered: the replay asks about the same few hundred days tens of
+-- thousands of times, and os.date/os.time are slow on an e-reader -- the
+-- replay took 0.8 s on a Kindle before, which every home screen waited for)
+local date_of, time_of, wday_of, n_dates = {}, {}, {}, 0
+local function dateOf(t)
+    local d = date_of[t]
+    if not d then
+        d = os.date("%Y-%m-%d", t)
+        if n_dates >= 20000 then date_of, n_dates = {}, 0 end
+        date_of[t], n_dates = d, n_dates + 1
+    end
+    return d
+end
 local function timeOf(date)
-    local y, m, d = date:match("^(%d+)-(%d+)-(%d+)$")
-    return os.time{ year = tonumber(y), month = tonumber(m), day = tonumber(d), hour = 12 }
+    local t = time_of[date]
+    if not t then
+        local y, m, d = date:match("^(%d+)-(%d+)-(%d+)$")
+        t = os.time{ year = tonumber(y), month = tonumber(m), day = tonumber(d), hour = 12 }
+        time_of[date] = t
+    end
+    return t
+end
+-- the day of the week of a date (1 = Sunday)
+local function wdayOf(date)
+    local w = wday_of[date]
+    if not w then w = os.date("*t", timeOf(date)).wday; wday_of[date] = w end
+    return w
 end
 local function nextDate(date) return dateOf(timeOf(date) + 86400) end
 -- a running day number, for the rabbit's naps
@@ -93,15 +116,16 @@ function Race.model(habits, now)
     local by_hour, turns = habits and habits.hours_by_day and {} or nil, 0
     if habits and habits.first then
         -- every calendar day from the first one seen (at most 8 weeks) to yesterday
-        local t = math.max(timeOf(habits.first), noon(now) - 56 * 86400)
+        local noon_now = noon(now)
+        local t = math.max(timeOf(habits.first), noon_now - 56 * 86400)
         while dateOf(t) < today do
             local d = dateOf(t)
             local pages = habits.days[d] or 0
-            local w = os.date("*t", t).wday
+            local w = wdayOf(d)
             wd_sum[w], wd_n[w] = wd_sum[w] + pages, wd_n[w] + 1
             total, n = total + pages, n + 1
             if pages > 0 then reading_days = reading_days + 1 end
-            if t >= noon(now) - 14 * 86400 then recent, recent_n = recent + pages, recent_n + 1 end
+            if t >= noon_now - 14 * 86400 then recent, recent_n = recent + pages, recent_n + 1 end
             local hd = by_hour and habits.hours_by_day[d]
             if hd then for h, c in pairs(hd) do by_hour[h] = (by_hour[h] or 0) + c; turns = turns + c end end
             t = t + 86400
@@ -138,7 +162,7 @@ function Race.model(habits, now)
     end
     m.hours = hours
     function m.expected(date)
-        local w = os.date("*t", timeOf(date)).wday
+        local w = wdayOf(date)
         -- your usual for that weekday; never under a fifth of your overall
         -- day, so skipping days lets the rival creep up
         return math.max(m.weekday[w], 0.2 * m.overall) * m.trend
