@@ -1440,11 +1440,10 @@ function Ledger:finishedBooks()
         add({ title = r.title, author = r.author, at = r.at, won = r.won, by = r.by, started = r.started,
             hash = r.hash, hardcover_id = r.hash and matches[r.hash] and matches[r.hash].book_id })
     end
-    for _, rec in ipairs(Data.library(self:libraryDirs(), nil, matches)) do
-        if rec.status == "complete" then
-            add({ title = rec.title, author = rec.author, at = dayTime(rec.status_on) or rec.last_open,
-                hash = rec.hash, hardcover_id = rec.hardcover_id })
-        end
+    -- (from KOReader's book records, including those of deleted books)
+    for _, m in ipairs(Data.finishedMarks(self:libraryDirs())) do
+        add({ title = m.title, author = m.author, at = dayTime(m.status_on) or m.changed,
+            hash = m.hash, hardcover_id = m.hash and matches[m.hash] and matches[m.hash].book_id })
     end
     for _, h in ipairs((self.cache or {}).hc_read or {}) do
         add({ title = h.title, author = h.author, at = dayTime(h.date), hardcover_id = h.id })

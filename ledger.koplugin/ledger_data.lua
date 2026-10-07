@@ -723,6 +723,60 @@ function Data.cleanTurns(t)
     return t
 end
 
+-- Books KOReader has marked finished, from its book records (metadata.*.lua
+-- in each book's .sdr) -- including records left behind when the book file
+-- itself was deleted, which is most finished books on a Kindle. Looked for
+-- beside the books (under dirs) and in KOReader's own record folders.
+-- -> { { title, author, hash, status_on = "YYYY-MM-DD" } }
+function Data.finishedMarks(dirs)
+    local out, seen, scanned = {}, {}, 0
+    local function readRecord(path)
+        local ok, t = pcall(dofile, path)
+        if not ok or type(t) ~= "table" then return end
+        local summary = type(t.summary) == "table" and t.summary or {}
+        if summary.status ~= "complete" then return end
+        local props = type(t.doc_props) == "table" and t.doc_props or {}
+        local hash = type(t.partial_md5_checksum) == "string" and t.partial_md5_checksum or nil
+        local key = hash or path
+        if seen[key] then return end
+        seen[key] = true
+        local title = type(props.title) == "string" and props.title ~= "" and props.title
+            or (path:match("([^/]+)%.sdr/[^/]+$") or "?"):gsub("%.[%w]+$", "")
+        out[#out + 1] = { title = title, hash = hash,
+            author = type(props.authors) == "string" and props.authors ~= "" and Data.authorName((props.authors:gsub("\n.*", ""))) or nil,
+            status_on = type(summary.modified) == "string" and summary.modified or nil,
+            changed = lfs.attributes(path, "modification") }
+    end
+    local function walk(dir, depth)
+        if depth > 6 or scanned > 8000 then return end
+        local ok, iter, dir_obj = pcall(lfs.dir, dir)
+        if not ok then return end
+        for name in iter, dir_obj do
+            if name ~= "." and name ~= ".." then
+                scanned = scanned + 1
+                local path = dir .. "/" .. name
+                if name:match("%.sdr$") then
+                    local ok2, it2, d2 = pcall(lfs.dir, path)
+                    if ok2 then
+                        for f in it2, d2 do
+                            if f:match("^metadata%..+%.lua$") then readRecord(path .. "/" .. f) end
+                        end
+                    end
+                elseif name:sub(1, 1) ~= "." and lfs.attributes(path, "mode") == "directory" then
+                    walk(path, depth + 1)
+                end
+            end
+        end
+    end
+    for _, d in ipairs(dirs or {}) do if d and lfs.attributes(d, "mode") == "directory" then walk(d, 1) end end
+    -- (KOReader's own record folders, for the other "book records" settings)
+    for _, f in ipairs({ "getDocSettingsDir", "getDocSettingsHashDir" }) do
+        local ok, d = pcall(function() return DataStorage[f](DataStorage) end)
+        if ok and d and lfs.attributes(d, "mode") == "directory" then walk(d, 1) end
+    end
+    return out
+end
+
 -- An author as people say it: Calibre's "Liu, Cixin [Liu, Cixin]" and
 -- "Crouch, Blake" -> "Cixin Liu", "Blake Crouch". Several authors, or a
 -- comma that isn't "Last, First", are left alone.
