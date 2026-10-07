@@ -173,7 +173,9 @@ function Reading:build(squeeze)
         -- (and by the height: in landscape a width-sized cover alone takes
         -- half the screen and pushes the tabs off the bottom)
         local cover_w = math.floor(math.min(cw * (0.36 - 0.05 * squeeze), H * (0.30 - 0.04 * squeeze) / 1.5))
-        local cover = UI.tappable((UI.cover(rec, cover_w, math.floor(cover_w * 1.5))), function() plugin:showBook(rec) end)
+        -- (tap: the book's page; hold: its file options)
+        local cover = UI.tappable((UI.cover(rec, cover_w, math.floor(cover_w * 1.5))), function() plugin:showBook(rec) end,
+            function() plugin:showFileMenu(rec) end)
         Timing.lap(tt, "build.cover" .. squeeze)
         local info_w = cw - cover_w - s(16)
         local title = UI.para(rec.title or "?", "bold", 20, info_w)

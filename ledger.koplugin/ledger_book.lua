@@ -85,7 +85,9 @@ function Book:build()
     -- (by the height too: a width-sized cover in landscape pushed the
     -- rival's room off the bottom)
     local cover_w = math.floor(math.min(cw * 0.32, H * 0.33 / 1.5))
-    local cover = UI.cover(rec, cover_w, math.floor(cover_w * 1.5))
+    -- (tap it for the book's file options: status, plugins, delete)
+    local cover = UI.tappable(UI.cover(rec, cover_w, math.floor(cover_w * 1.5)),
+        function() plugin:showFileMenu(rec, { from_book_page = true }) end)
     local info_w = cw - cover_w - s(14)
     local title = UI.para(rec.title or "?", "bold", 18, info_w)
     local info = VerticalGroup:new{ align = "left", title }

@@ -586,6 +586,88 @@ function Ledger:closeAll()
     UI.freeSprites()
 end
 
+-- A book's file options, as a long press on it in KOReader's file browser
+-- gives them (Matt, 2026-10-07: "there should be some plugin options there,
+-- and then obviously delete"): its status, Book information, every
+-- plugin's buttons for a book (Bookbridge's Hardcover and Calibre-Web
+-- ones among them -- read from the same list the file browser uses, so a
+-- plugin added later shows up too), and Delete with KOReader's own
+-- confirmation. Not the file browser's Paste/Select/Cut/Copy: there's no
+-- folder here. opts.from_book_page leaves out "Book page".
+function Ledger:showFileMenu(rec, opts)
+    opts = opts or {}
+    local file = rec and rec.file
+    if not file or lfs.attributes(file, "mode") ~= "file" then return end
+    local ButtonDialog = require("ui/widget/buttondialog")
+    local BookList = require("ui/widget/booklist")
+    local filemanagerutil = require("apps/filemanager/filemanagerutil")
+    local FileManager = require("apps/filemanager/filemanager")
+    local fm = self.ui
+    local in_files = fm and fm.showDeleteFileDialog ~= nil   -- (the file browser's, not a reader's)
+    local dlg
+    local function close() if dlg then UIManager:close(dlg); dlg = nil end end
+    local function changed() close(); self.race_model = nil; self:redraw() end
+
+    local been_opened = BookList.hasBookBeenOpened(file)
+    local doc = been_opened and BookList.getDocSettings(file) or file
+    local props = in_files and fm.coverbrowser and fm.coverbrowser:getBookInfo(file) or nil
+    if not props and been_opened then
+        local FileManagerBookInfo = require("apps/filemanager/filemanagerbookinfo")
+        props = FileManagerBookInfo.extendProps(doc:readSetting("doc_props") or {}, file)
+        props.has_cover = true
+    end
+
+    local buttons = {}
+    local first = { { text = _("Open"), callback = function() close(); self:openBook(rec) end } }
+    if not opts.from_book_page then
+        first[#first + 1] = { text = _("Book page"), callback = function() close(); self:showBook(rec) end }
+    end
+    buttons[#buttons + 1] = first
+    if been_opened then buttons[#buttons + 1] = filemanagerutil.genStatusButtonsRow(doc, changed) end
+    buttons[#buttons + 1] = { filemanagerutil.genBookInformationButton(doc, props, close) }
+    -- the plugins' rows: each button closes this first (the file browser
+    -- leaves that to the plugin, and Bookbridge's don't), three to a row
+    local added = (fm and fm.file_dialog_added_buttons) or FileManager.file_dialog_added_buttons
+    for _, row_func in ipairs(added or {}) do
+        local ok, row = pcall(row_func, file, true, props)
+        if ok and type(row) == "table" and #row > 0 then
+            local line = {}
+            for _, b in ipairs(row) do
+                local copy = {}
+                for k, v in pairs(b) do copy[k] = v end
+                if b.callback then copy.callback = function() close(); b.callback() end end
+                if b.hold_callback then copy.hold_callback = function() close(); b.hold_callback() end end
+                line[#line + 1] = copy
+                if #line == 3 then buttons[#buttons + 1] = line; line = {} end
+            end
+            if #line > 0 then buttons[#buttons + 1] = line end
+        end
+    end
+    if in_files then
+        buttons[#buttons + 1] = { { text = _("Delete"), callback = function()
+            close()
+            fm:showDeleteFileDialog(file, function() self:afterDelete(file) end)
+        end } }
+    end
+    dlg = ButtonDialog:new{
+        title = (rec.title or file:match("([^/]+)$")) .. (rec.author and ("\n" .. rec.author) or ""),
+        title_align = "center",
+        buttons = buttons,
+    }
+    UIManager:show(dlg)
+end
+
+-- A book deleted from its options: off the book page and the shelves.
+function Ledger:afterDelete(file)
+    if self.book_page and UIManager:isWidgetShown(self.book_page) and self.book_page.rec
+            and self.book_page.rec.file == file then
+        UIManager:close(self.book_page)
+        self.book_page = nil
+    end
+    self.race_model = nil
+    if self.tab then self:showTab(self.tab, { filter = self.page and self.page.filter }) end
+end
+
 function Ledger:showBook(rec)
     if self.book_page and UIManager:isWidgetShown(self.book_page) then UIManager:close(self.book_page) end
     self.book_page = Book:new{ plugin = self, rec = rec }

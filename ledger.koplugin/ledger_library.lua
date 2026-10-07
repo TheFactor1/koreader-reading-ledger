@@ -351,11 +351,14 @@ function Library:tile(rec, w, h, text_w)
     -- every tile takes its column's full width, so the grid stays aligned
     local LeftContainer = require("ui/widget/container/leftcontainer")
     local cell = LeftContainer:new{ dimen = Geom:new{ w = text_w, h = vg:getSize().h }, vg }
-    -- tap: open the book; hold: its page (the race, details, Readest)
+    -- tap: open the book; hold: its options (its page among them; status,
+    -- plugins, delete -- as a long press in the file browser)
     if rec.trending then
         return UI.tappable(cell, function() self.plugin:showShelfBook(rec) end)
     end
-    return UI.tappable(cell, function() self.plugin:openBook(rec) end, function() self.plugin:showBook(rec) end)
+    return UI.tappable(cell, function() self.plugin:openBook(rec) end, function()
+        if rec.file then self.plugin:showFileMenu(rec) else self.plugin:showBook(rec) end
+    end)
 end
 
 -- Height of everything under a cover, measured from the real widgets.
