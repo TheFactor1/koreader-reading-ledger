@@ -20,6 +20,7 @@ local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
 local LuaSettings = require("luasettings")
 local NetworkMgr = require("ui/network/manager")
+local lfs = require("libs/libkoreader-lfs")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local logger = require("logger")
@@ -430,6 +431,10 @@ function Ledger:collect()
     Timing.lap(t, "collect.observe")
     -- (finished books' results are worked out from the statistics when
     -- asked for: Ledger:raceResults)
+    self.cache = self.cache or Data.loadCache()
+    self:applyFoundCovers({ data.lead })
+    self:applyFoundCovers(data.reading)
+    self:applyFoundCovers(data.just_in)
     return data
 end
 
@@ -477,6 +482,7 @@ function Ledger:showTab(id, opts)
     if id == "library" then
         local books = Data.library(self:libraryDirs(), Data.readestPositions(self.ui), Data.hardcoverMatches())
         for _, rec in ipairs(books) do rec.result = self:raceResult(rec) end
+        self:applyFoundCovers(books)
         page = Library:new{ plugin = self, books = books, filter = opts.filter or "all" }
     elseif id == "settings" then
         page = Settings:new{ plugin = self }
@@ -610,10 +616,88 @@ function Ledger:fetchCoversFor(recs, on_done)
             end
         end
     end
-    if #files == 0 then return end
+    if #files == 0 then return self:lookupMissingCovers(recs, on_done) end
     pcall(BIM.extractInBackground, BIM, files)
     -- one extra second per book, capped: the extractor works through them in order
-    UIManager:scheduleIn(math.min(20, 4 + #files), function() if on_done then on_done() end end)
+    UIManager:scheduleIn(math.min(20, 4 + #files), function()
+        if on_done then on_done() end
+        -- (then the ones KOReader found no cover in)
+        self:lookupMissingCovers(recs, on_done)
+    end)
+end
+
+-- A book's key for the found-covers list: its checksum, else its file.
+local function coverKey(rec) return rec and (rec.hash or rec.file) end
+
+-- Covers found on Open Library for books that have none of their own
+-- (cache.covers[key] = { file } or { none = time }): set as the book's
+-- cover image. KOReader's own cover, when there is one, comes first.
+function Ledger:applyFoundCovers(recs)
+    local found = (self.cache or {}).covers
+    if not found then return end
+    for _, rec in pairs(recs or {}) do
+        local f = type(rec) == "table" and found[coverKey(rec)]
+        if f and f.file and not rec.cover_file and lfs.attributes(f.file, "mode") == "file" then
+            rec.cover_file = f.file
+        end
+    end
+end
+
+-- Books KOReader looked in and found no cover: ask Open Library, a few at
+-- a time, in the background; once per book (a miss is asked again after a
+-- month). on_done when any were found.
+local COVER_RETRY = 30 * 86400
+function Ledger:lookupMissingCovers(recs, on_done)
+    if self._covers_busy or not NetworkMgr:isOnline() then return end
+    local ok, BIM = pcall(require, "bookinfomanager")
+    local cache = self.cache or {}
+    cache.covers = cache.covers or {}
+    local ask = {}
+    for _, rec in pairs(recs or {}) do
+        local key = type(rec) == "table" and coverKey(rec)
+        local known = key and cache.covers[key]
+        local stale = known and known.none and os.time() - known.none > COVER_RETRY
+        -- (title AND author: a title alone -- "Notes", "Home" -- finds
+        -- somebody else's book)
+        if key and rec.title and rec.author and rec.author ~= "" and not rec.cover_file and (not known or stale) then
+            local own
+            if ok and BIM and rec.file then
+                local iok, info = pcall(BIM.getBookInfo, BIM, rec.file, false)
+                -- (asked only once KOReader has looked: it may still find one)
+                own = not (iok and info and info.cover_fetched) or info.has_cover
+            end
+            if not own then ask[#ask + 1] = { key = key, title = rec.title, author = rec.author } end
+        end
+        if #ask >= 6 then break end
+    end
+    if #ask == 0 then return end
+    self._covers_busy = true
+    local dir = Data.coversDir()
+    Bg.run(function()
+        local out = {}
+        for i, a in ipairs(ask) do
+            local file, err = Net.openLibraryCover(a.title, a.author, dir)
+            out[i] = { file = file, err = err }
+        end
+        return out
+    end, function(done, out)
+        self._covers_busy = false
+        if not done or type(out) ~= "table" then return end
+        local any = false
+        local c = self.cache or {}
+        c.covers = c.covers or {}
+        for i, a in ipairs(ask) do
+            local r = out[i] or {}
+            if r.file then c.covers[a.key] = { file = r.file }; any = true
+            elseif not r.err then c.covers[a.key] = { none = os.time() } end   -- (unreachable: ask again)
+        end
+        self.cache = c
+        Data.saveCache(c)
+        if any then
+            self:applyFoundCovers(recs)
+            if on_done then on_done() end
+        end
+    end, 60)
 end
 
 function Ledger:fetchCovers(data)

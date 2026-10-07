@@ -63,6 +63,30 @@ function Net.fetchFile(url, path)
     return path
 end
 
+-- A cover for a book that has none of its own (or isn't on this device),
+-- from Open Library: its search by title and author, the first edition
+-- there with a cover. -> path of the downloaded image, or nil when Open
+-- Library has none (nil, err when it couldn't be asked).
+local function urlencode(s)
+    return (tostring(s):gsub("[^%w%-%._~ ]", function(c) return string.format("%%%02X", c:byte()) end):gsub(" ", "+"))
+end
+
+function Net.openLibraryCover(title, author, covers_dir)
+    if not title or title == "" or not covers_dir then return nil end
+    local url = string.format("%s/search.json?title=%s%s&fields=cover_i&limit=5", OPENLIBRARY,
+        urlencode(title), author and author ~= "" and ("&author=" .. urlencode(author)) or "")
+    local d, err = getJSON(url)
+    if not d then return nil, err end
+    for _, doc in ipairs(type(d.docs) == "table" and d.docs or {}) do
+        local id = num(doc.cover_i)
+        if id then
+            return Net.fetchFile(string.format("https://covers.openlibrary.org/b/id/%d-M.jpg", id),
+                string.format("%s/ol-%d.jpg", covers_dir, id))
+        end
+    end
+    return nil
+end
+
 -- Open Library trending. period: "daily" | "weekly" | "monthly".
 -- (Its subject search sorted by trending returns anthologies and classics,
 -- so there is no per-genre list.)

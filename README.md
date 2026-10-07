@@ -133,7 +133,7 @@ bottom of that menu brings it back.
 | Readest plugin | Your position in Readest for every book, and reading done there (statistics and positions) |
 | Bookbridge | Requests still on order, Hardcover matches, search and request |
 | Hardcover, your own key | Shelves, yearly goal, a book's rating and series |
-| Open Library | The Trending shelf; no account, straight from the device |
+| Open Library | The Trending shelf, and a cover for a book that has none of its own (looked up once by its title and author); no account, straight from the device |
 
 No server of anyone's is involved for trending, and no shared Hardcover key is
 built in: a Hardcover key is a personal account token.
