@@ -156,12 +156,12 @@ function Year:build()
 
     -- header: back, and the year with arrows where there's more
     local nav = HorizontalGroup:new{ align = "center" }
-    nav[#nav + 1] = UI.tappable(UI.text(year > first and "<" or " ", "pix", 11), function() self:go(year - 1) end)
+    nav[#nav + 1] = UI.link(year > first and "<" or " ", function() self:go(year - 1) end)
     nav[#nav + 1] = UI.hspace(s(10))
     nav[#nav + 1] = UI.text(string.format("YOUR %d", year), "pix", 11)
     nav[#nav + 1] = UI.hspace(s(10))
-    nav[#nav + 1] = UI.tappable(UI.text(year < last and ">" or " ", "pix", 11), function() self:go(year + 1) end)
-    add(UI.header(cw, UI.tappable(UI.text("< BACK", "pix", 11), function() self:onClose() end), nav))
+    nav[#nav + 1] = UI.link(year < last and ">" or " ", function() self:go(year + 1) end)
+    add(UI.header(cw, UI.link("< BACK", function() self:onClose() end), nav))
     add(UI.vspace(s(14)))
 
     if y.pages == 0 and #y.books == 0 then

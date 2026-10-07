@@ -133,11 +133,11 @@ function Reading:build(squeeze)
     local right
     if #self.books > 1 then
         right = HorizontalGroup:new{ align = "center",
-            UI.tappable(UI.text("<", "pix", 11), function() self:onPrevBook() end),
+            UI.link("<", function() self:onPrevBook() end),
             UI.hspace(s(10)),
             UI.text(string.format("%d/%d", self.index, #self.books), "pix", 11),
             UI.hspace(s(10)),
-            UI.tappable(UI.text(">", "pix", 11), function() self:onNextBook() end),
+            UI.link(">", function() self:onNextBook() end),
         }
     else
         right = UI.text(os.date("%a %d %b"):upper(), "pix", 11)

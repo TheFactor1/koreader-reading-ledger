@@ -25,6 +25,7 @@ local TextWidget = require("ui/widget/textwidget")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
 local Widget = require("ui/widget/widget")
+local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local lfs = require("libs/libkoreader-lfs")
 local logger = require("logger")
 
@@ -167,13 +168,19 @@ function UI.spread(width, left, right)
 end
 
 -- ---------------------------------------------------------------- tapping
-local Tappable = InputContainer:extend{ callback = nil, hold_callback = nil }
+local Tappable = InputContainer:extend{ callback = nil, hold_callback = nil, pad = 0 }
 
 function Tappable:init()
     self.dimen = Geom:new{ w = self[1]:getSize().w, h = self[1]:getSize().h }
+    -- (pad: taps this far around it count too -- a word is a small target)
+    local function range()
+        local d, p = self.dimen, self.pad
+        if p > 0 and d.x then return Geom:new{ x = d.x - p, y = d.y - p, w = d.w + 2 * p, h = d.h + 2 * p } end
+        return d
+    end
     self.ges_events = {
-        Tap = { GestureRange:new{ ges = "tap", range = function() return self.dimen end } },
-        Hold = { GestureRange:new{ ges = "hold", range = function() return self.dimen end } },
+        Tap = { GestureRange:new{ ges = "tap", range = range } },
+        Hold = { GestureRange:new{ ges = "hold", range = range } },
     }
 end
 
@@ -190,6 +197,14 @@ end
 
 function UI.tappable(widget, callback, hold_callback)
     return Tappable:new{ widget, callback = callback, hold_callback = hold_callback }
+end
+
+-- A word in a page's top line that does something (FIND, FILES >, < BACK,
+-- the < > arrows): it takes taps a finger's width around it. Up there a
+-- tap that misses the letters opened KOReader's menu instead (Matt's Kindle,
+-- 2026-10-07).
+function UI.link(label, callback, size)
+    return Tappable:new{ UI.text(label, "pix", size or 11), callback = callback, pad = Screen:scaleBySize(16) }
 end
 
 -- A pixel-font button: solid (main action) or outlined. With width, the
@@ -225,18 +240,29 @@ end
 -- The line at the top of every page: its name on the left, something on the
 -- right, always the same height and the same gap under it, so the three
 -- pages start at the same place.
+-- (where the top line ends on screen, as last drawn: KOReader's menu strip
+-- stops there -- see UI.addTopMenu)
+local HeaderBox = WidgetContainer:extend{}
+function HeaderBox:paintTo(bb, x, y)
+    UI.header_bottom = y + self[1]:getSize().h
+    WidgetContainer.paintTo(self, bb, x, y)
+end
+
 function UI.header(width, left, right)
     local h = UI.text("A", "pix", 13):getSize().h
     if type(left) == "string" then left = UI.text(left, "pix", 11) end
     local line = UI.spread(width, left, right)
     table.insert(line, 1, VerticalSpan:new{ width = h })
-    return VerticalGroup:new{ align = "left", line, VerticalSpan:new{ width = Screen:scaleBySize(12) } }
+    return HeaderBox:new{ VerticalGroup:new{ align = "left", line, VerticalSpan:new{ width = Screen:scaleBySize(12) } } }
 end
 
 -- ---------------------------------------------------------------- KOReader's menu
 -- A tap on the top strip of a Ledger page (or a swipe down from it) opens
 -- KOReader's own menu, as it does everywhere else in KOReader. Buttons up
 -- there still get their taps first: the page only sees taps nothing used.
+-- The strip is the page's top line -- down to where it ends, not a tenth of
+-- the screen, which reached into the buttons under it (the Library's
+-- filters) and turned near misses there into KOReader's menu.
 -- A page made for one screen size asks the Ledger to make it again when the
 -- size changes (see Ledger:refit).
 function UI.refitOnResize(Page)
@@ -245,8 +271,10 @@ function UI.refitOnResize(Page)
 end
 
 function UI.addTopMenu(page)
-    local W, H = Screen:getWidth(), Screen:getHeight()
-    local band = Geom:new{ x = 0, y = 0, w = W, h = math.floor(H / 10) }
+    local band = function()
+        local W, H = Screen:getWidth(), Screen:getHeight()
+        return Geom:new{ x = 0, y = 0, w = W, h = UI.header_bottom or math.floor(H / 10) }
+    end
     page.ges_events = page.ges_events or {}
     page.ges_events.TopMenuTap = { GestureRange:new{ ges = "tap", range = band } }
     page.ges_events.TopMenuSwipe = { GestureRange:new{ ges = "swipe", range = band } }

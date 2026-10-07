@@ -382,10 +382,10 @@ function Library:build()
     local links = HorizontalGroup:new{ align = "center" }
     if self.plugin:bookbridge() then
         -- Bookbridge's search and request, right here
-        links[#links + 1] = UI.tappable(UI.text("FIND", "pix", 11), function() self.plugin:findBook() end)
+        links[#links + 1] = UI.link("FIND", function() self.plugin:findBook() end)
         links[#links + 1] = UI.text("   ·   ", "pix", 11, UI.INK2)
     end
-    links[#links + 1] = UI.tappable(UI.text("FILES >", "pix", 11), function() self.plugin:openFiles() end)
+    links[#links + 1] = UI.link("FILES >", function() self.plugin:openFiles() end)
     top[#top + 1] = UI.header(cw, "LIBRARY · " .. count, links)
 
     local chips = HorizontalGroup:new{}

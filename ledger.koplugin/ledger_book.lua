@@ -78,7 +78,7 @@ function Book:build()
     local main = VerticalGroup:new{ align = "left" }
     local function add(w) main[#main + 1] = w end
 
-    add(UI.header(cw, UI.tappable(UI.text("< BACK", "pix", 11), function() self:onClose() end),
+    add(UI.header(cw, UI.link("< BACK", function() self:onClose() end),
         UI.text("BOOK", "pix", 11)))
 
     -- cover and details
