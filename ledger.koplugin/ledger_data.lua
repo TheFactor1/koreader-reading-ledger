@@ -456,7 +456,9 @@ function Data.readingStats(hash)
         if id then
             r = row("SELECT sum(duration), count(*), min(start_time), max(start_time + duration) FROM page_stat_data WHERE id_book = ?", id)
             secs, pages = tonumber(r[1]), tonumber(r[2])
-            if secs and pages and pages > 0 then out.pace = secs / pages end
+            -- (this book's own pace once it has a few pages behind it; a
+            -- page or two said "13 min left" for 160 pages)
+            if secs and pages and pages >= 10 then out.pace = secs / pages end
             out.book_start, out.book_end = tonumber(r[3]), tonumber(r[4])
             -- where you were when the statistics first saw this book (you may
             -- have started it elsewhere), as a fraction of the book
