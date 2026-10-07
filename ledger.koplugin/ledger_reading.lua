@@ -294,7 +294,11 @@ function Reading:build(squeeze)
     -- footer: goal, then the tabs
     local foot = VerticalGroup:new{ align = "left" }
     local hc = c.hardcover
-    if squeeze >= 4 then
+    if not plugin:statisticsOn() then
+        -- (first: without them the race and the counts above stand still)
+        foot[#foot + 1] = UI.tappable(UI.text("Reading statistics are off: the race needs them. Turn on ›", "body", 11, UI.BLACK, cw),
+            function() plugin:enableStatistics(); plugin:redraw() end)
+    elseif squeeze >= 4 then
         -- (no room: the goal lives in Settings too)
     elseif hc and hc.goal and hc.goal.goal then
         local fish = UI.fishRow(math.min(hc.goal.goal, 24), hc.goal.progress or 0, cw / 22)

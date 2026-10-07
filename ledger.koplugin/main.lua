@@ -234,18 +234,26 @@ function Ledger:toggleHome()
     self:redraw()
 end
 
--- KOReader's reading statistics plugin, which the rival learns from.
+-- KOReader's reading statistics plugin, which the rival learns from. Off
+-- either way: the plugin disabled, or its own "Enabled" switch off (Reading
+-- statistics > Settings), which records nothing while the plugin runs.
 function Ledger:statisticsOn()
     local disabled = G_reader_settings:readSetting("plugins_disabled") or {}
-    return not disabled.statistics
+    local st = G_reader_settings:readSetting("statistics")
+    return not disabled.statistics and not (type(st) == "table" and st.is_enabled == false)
 end
 
 function Ledger:enableStatistics()
     local disabled = G_reader_settings:readSetting("plugins_disabled") or {}
+    local was_disabled = disabled.statistics
     disabled.statistics = nil
     G_reader_settings:saveSetting("plugins_disabled", disabled)
+    -- (the plugin's own switch: the table it reads, so it applies at once)
+    local st = G_reader_settings:readSetting("statistics")
+    if type(st) == "table" then st.is_enabled = true end
     G_reader_settings:flush()
-    UIManager:show(InfoMessage:new{ text = _("Reading statistics will be on after KOReader restarts."), timeout = 4 })
+    UIManager:show(InfoMessage:new{ text = was_disabled and _("Reading statistics will be on after KOReader restarts.")
+        or _("Reading statistics are on: your reading counts from the next page you turn."), timeout = 4 })
 end
 
 function Ledger:addToMainMenu(menu_items)
