@@ -131,7 +131,8 @@ function Book:build()
     chase.show_parent = self
     add(chase)
     add(UI.vspace(s(4)))
-    add(UI.spread(cw, UI.text(lines.you_label, "body", 10, UI.INK2), UI.text(lines.rival_label, "body", 10, UI.INK2)))
+    add(UI.spread(cw, UI.text(lines.you_label, "body", 10, UI.INK2, math.floor(cw / 2) - s(8)),
+        UI.text(lines.rival_label, "body", 10, UI.INK2, math.floor(cw / 2) - s(8))))
     add(UI.vspace(s(10)))
 
     -- actions

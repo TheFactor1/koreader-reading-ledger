@@ -102,7 +102,7 @@ end
 local function statBlock(label, value, w)
     local CenterContainer = require("ui/widget/container/centercontainer")
     local vg = VerticalGroup:new{ align = "center",
-        UI.text(value, "bold", 16), UI.text(label:upper(), "pix", 8, UI.INK2) }
+        UI.text(value, "bold", 16, UI.BLACK, w), UI.text(label:upper(), "pix", 8, UI.INK2, w - Screen:scaleBySize(4)) }
     return CenterContainer:new{ dimen = Geom:new{ w = w, h = vg:getSize().h }, vg }
 end
 
@@ -246,7 +246,8 @@ function Reading:build(squeeze)
         self.chase = chase
         add(chase)
         add(UI.vspace(s(4)))
-        add(UI.spread(cw, UI.text(lines.you_label, "body", 10, UI.INK2), UI.text(lines.rival_label, "body", 10, UI.INK2)))
+        add(UI.spread(cw, UI.text(lines.you_label, "body", 10, UI.INK2, math.floor(cw / 2) - s(8)),
+        UI.text(lines.rival_label, "body", 10, UI.INK2, math.floor(cw / 2) - s(8))))
         add(UI.vspace(s(6)))
         add(UI.text(lines.today, "body", 11, UI.BLACK, cw))
         gap(s(14))

@@ -661,9 +661,23 @@ function Ledger:rival()
     return r
 end
 
--- Each animal keeps its own name (cat_name, dog_name, ...).
+-- Each animal keeps its own name (cat_name, dog_name, ...). A name, not
+-- a sentence: it sits in labels and columns sized for a word or two, so
+-- it's kept to NAME_MAX characters (whole UTF-8 characters, any script).
+local NAME_MAX = 16
+local function shortName(n)
+    if type(n) ~= "string" then return nil end
+    local out, count = {}, 0
+    for ch in n:gmatch("[%z\1-\127\194-\244][\128-\191]*") do
+        count = count + 1
+        if count > NAME_MAX then break end
+        out[#out + 1] = ch
+    end
+    return (table.concat(out):gsub("%s+$", ""))
+end
+
 function Ledger:petName(animal)
-    local n = self.settings:readSetting(animal .. "_name")
+    local n = shortName(self.settings:readSetting(animal .. "_name"))
     return (n and n ~= "") and n or Race.animal(animal).name
 end
 
@@ -675,7 +689,7 @@ function Ledger:editPetName(animal)
         buttons = { {
             { text = _("Cancel"), id = "close", callback = function() UIManager:close(dialog) end },
             { text = _("Save"), is_enter_default = true, callback = function()
-                local name = dialog:getInputText():gsub("^%s+", ""):gsub("%s+$", "")
+                local name = shortName(dialog:getInputText():gsub("^%s+", ""):gsub("%s+$", "")) or ""
                 UIManager:close(dialog)
                 self.settings:saveSetting(animal .. "_name", name ~= "" and name or nil)
                 self.settings:flush()
@@ -821,6 +835,18 @@ function Ledger:showBooksSetup()
     local dlg
     local function pick(fn) return function() UIManager:close(dlg); fn() end end
     local buttons = {}
+    -- your devices in step through Readest (Bookbridge 0.9+): sync and the
+    -- cloud library once it's set up; until then, the one step it needs
+    local rd = bb.readestState and bb:readestState()
+    if rd and rd.loaded and rd.signed_in and bb.syncNow then
+        buttons[#buttons + 1] = { { text = _("Sync now with my other devices"), callback = pick(function() bb:syncNow("manual", true) end) } }
+        buttons[#buttons + 1] = { { text = _("Cloud library: every book in Readest"), callback = pick(function()
+            UIManager:broadcastEvent(require("ui/event"):new("ReadestOpenLibrary"))
+        end) } }
+    elseif rd and bb.readestNext then
+        buttons[#buttons + 1] = { { text = _("Readest library & sync") .. " -- " .. tostring(rd.label):lower(),
+            callback = pick(function() bb:readestNext() end) } }
+    end
     if st.zlibrary then
         buttons[#buttons + 1] = { { text = _("Z-Library") .. " -- " .. st.zlibrary:lower(), callback = pick(function()
             bb:zlibrarySignIn(function() self:show() end)
@@ -829,13 +855,6 @@ function Ledger:showBooksSetup()
     if st.annas then
         buttons[#buttons + 1] = { { text = _("Anna's Archive") .. " -- " .. st.annas:lower(), callback = pick(function()
             if bb.editAnnasSettings then bb:editAnnasSettings() end
-        end) } }
-    end
-    if bb.syncNow then
-        -- your devices in step through Readest (Bookbridge 0.9+)
-        buttons[#buttons + 1] = { { text = _("Sync now with my other devices"), callback = pick(function() bb:syncNow("manual", true) end) } }
-        buttons[#buttons + 1] = { { text = _("Cloud library: every book in Readest"), callback = pick(function()
-            UIManager:broadcastEvent(require("ui/event"):new("ReadestOpenLibrary"))
         end) } }
     end
     buttons[#buttons + 1] = { { text = _("Bookbridge: search, requests, sync, settings"),
