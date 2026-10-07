@@ -212,5 +212,34 @@ do
     ck(s1.total == 250 and s2.total == 280 and math.abs(s1.rival_pct - s2.rival_pct) < 1e-9, "shown in each device's own pages, the rival at the same place on both")
 end
 
+
+-- 9. a flick to the end and back isn't reading it: All Systems Red's real
+-- page turns on Matt's Kindle (2026-09-25, 1:06-1:56 pm: pages 1-20, then
+-- 44, 64, 99, 119, 153, 150 in twenty minutes, back to page 3). KOReader
+-- says 5.8 percent; the race said p. 153 of 155 and the rival had finished.
+do
+    local ASR = { {0,1,155}, {38,5,155}, {56,3,159}, {63,10,159}, {88,5,155}, {120,10,159}, {131,11,159}, {145,12,155}, {153,12,155}, {161,11,159}, {174,5,155}, {243,3,159}, {260,5,155}, {274,3,159}, {691,10,155}, {770,13,159}, {786,14,155}, {792,13,159}, {813,19,159}, {883,20,155}, {1143,20,155}, {1208,44,159}, {1226,44,159}, {1236,44,155}, {1258,44,159}, {1294,44,155}, {1309,64,159}, {1328,65,155}, {1332,64,159}, {1336,65,155}, {1357,99,159}, {1551,97,155}, {1794,116,159}, {1800,121,159}, {1833,119,155}, {2048,153,155}, {2065,119,155}, {2086,153,155}, {2139,121,159}, {2164,119,155}, {2300,124,159}, {2305,140,159}, {2421,123,155}, {2435,137,155}, {2874,151,155}, {2917,150,155}, {2933,5,155}, {2986,3,159} }   -- seconds from the first turn, page, page count
+    local start = os.time{ year = 2026, month = 9, day = 25, hour = 13, min = 6, sec = 58 }
+    local turns = { rows = {}, hash = "asr", title = "All Systems Red" }
+    for _, r in ipairs(ASR) do
+        turns.rows[#turns.rows + 1] = { t = start + r[1], page = r[2], tot = r[3], frac = r[2] / r[3], first_frac = math.max(0, (r[2] - 1) / r[3]) }
+    end
+    local at = os.time{ year = 2026, month = 10, day = 7, hour = 16, min = 10 }
+    local hd = {}
+    for i = 1, 40 do hd[os.date("%Y-%m-%d", at - i * DAY)] = 7 end
+    local T = Race.timeline(habitsOf(hd, os.date("%Y-%m-%d", at), "asr"), "tortoise", at)
+    local st = Race.state({ pct = 0.058, pages = 155, hash = "asr" }, { turns = turns, today = 0 }, nil, "cat", "tortoise", T, at)
+    ck(st.you_pct < 0.1, string.format("flicked to p. 153 and back: you're where you stopped (%.0f%%), not 99%%", st.you_pct * 100))
+    ck(not st.rival_done and st.rival_pct < 0.5, string.format("...and the rival kept to a reading pace (%.0f%%), not finished", st.rival_pct * 100))
+    -- reading on from where you stopped still counts
+    local read_on = { rows = {}, hash = "asr2" }
+    for _, r in ipairs(turns.rows) do read_on.rows[#read_on.rows + 1] = r end
+    for k = 4, 40 do
+        read_on.rows[#read_on.rows + 1] = { t = start + 4000 + k * 60, page = k, tot = 155, frac = k / 155, first_frac = (k - 1) / 155 }
+    end
+    local st2 = Race.state({ pct = 0.02, pages = 155, hash = "asr2" }, { turns = read_on, today = 0 }, nil, "cat", "tortoise", T, at)
+    ck(math.abs(st2.you_pct - 40 / 155) < 0.01, string.format("reading on to p. 40 the same day: there (%.0f%%)", st2.you_pct * 100))
+end
+
 print(string.format("%d passed, %d failed", pass, fail))
 os.exit(fail == 0 and 0 or 1)

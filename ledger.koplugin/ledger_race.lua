@@ -293,11 +293,14 @@ function Race.bookRace(turns, T, total_hint, t)
     for i = 1, last do if (rows[i].tot or 0) > total then total = rows[i].tot end end
     if total <= 0 then total = total_hint or Race.DEFAULT_PAGES end
     local start, start_frac = rows[seg].t, rows[seg].first_frac
-    -- where you were at the end of each day (the furthest page so far)
-    local you_end, best = {}, start_frac
+    -- where you were at the end of each day: the page you stopped on (the
+    -- day's last turn), not the furthest one you saw -- a flick to the end
+    -- and back isn't reading it (Matt's All Systems Red, 2026-09-25: pages
+    -- 44, 99, 153 in twenty minutes, then back to page 5, and the race put
+    -- him at 99% with the rival finished)
+    local you_end = {}
     for i = seg, last do
-        if rows[i].frac > best then best = rows[i].frac end
-        you_end[dateOf(rows[i].t)] = best
+        you_end[dateOf(rows[i].t)] = math.max(start_frac, rows[i].frac)
     end
     local a = Race.animal(T.rival)
     local start_date, upto = dateOf(start), dateOf(t)
