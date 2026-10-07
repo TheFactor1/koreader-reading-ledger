@@ -384,7 +384,9 @@ function Race.result(turns, T)
     local rival_pages = rivalAt(br, T, Race.animal(T.rival), total, total, at)
     local won = rival_pages < total
     return { won = won, by = won and (total - rival_pages) or nil, rival = T.rival, at = at, title = turns.title, hash = turns.hash,
-        author = turns.author, started = br.start, pages = total }
+        -- (started: your first page in it, not the race's start -- a race
+        -- restarts after a two-week break, which isn't a quick read)
+        author = turns.author, started = turns.rows[1] and turns.rows[1].t or br.start, pages = total }
 end
 
 -- Your record against the rival in every finished book (finished:

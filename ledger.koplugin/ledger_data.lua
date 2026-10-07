@@ -58,7 +58,7 @@ function Data.localRecord(file, last_open)
     local props = ds:readSetting("doc_props") or {}
     if type(props.title) == "string" and props.title ~= "" then rec.title = props.title end
     if type(props.authors) == "string" and props.authors ~= "" then
-        rec.author = props.authors:gsub("\n.*", "")
+        rec.author = Data.authorName((props.authors:gsub("\n.*", "")))
     end
     if type(props.series) == "string" and props.series ~= "" then
         rec.series = props.series
@@ -133,7 +133,7 @@ function Data.justIn(dirs, max_age_days, limit)
             local iok, info = pcall(BIM.getBookInfo, BIM, r.file, false)
             if iok and info then
                 if type(info.title) == "string" and info.title ~= "" then r.title = info.title end
-                if type(info.authors) == "string" and info.authors ~= "" then r.author = info.authors:gsub("\n.*", "") end
+                if type(info.authors) == "string" and info.authors ~= "" then r.author = Data.authorName((info.authors:gsub("\n.*", ""))) end
             end
         end
     end
@@ -172,7 +172,7 @@ function Data.library(dirs, readest, matches)
             if iok and info then
                 if not rec.opened and type(info.title) == "string" and info.title ~= "" then rec.title = info.title end
                 if (guessed or not rec.author) and type(info.authors) == "string" and info.authors ~= "" then
-                    rec.author = info.authors:gsub("\n.*", "")
+                    rec.author = Data.authorName((info.authors:gsub("\n.*", "")))
                 end
                 if not rec.series and type(info.series) == "string" and info.series ~= "" then
                     rec.series, rec.series_index = info.series, tonumber(info.series_index)
@@ -683,7 +683,7 @@ function Data.bookTurns(hash, db_in)
     local title, author
     eachRow(db, "SELECT title, authors FROM book WHERE md5 = ? ORDER BY id LIMIT 1", { hash }, function(row)
         title = row[1] and tostring(row[1]) or nil
-        author = type(row[2]) == "string" and row[2] ~= "" and (row[2]:gsub("\n.*", "")) or nil
+        author = type(row[2]) == "string" and row[2] ~= "" and Data.authorName((row[2]:gsub("\n.*", ""))) or nil
     end)
     local lo = sane()
     local out = { rows = {}, total = 0, hash = hash, title = title, author = author }
@@ -699,6 +699,17 @@ function Data.bookTurns(hash, db_in)
     if #out.rows == 0 then out = nil end
     if not db_in then db:close() end
     return out
+end
+
+-- An author as people say it: Calibre's "Liu, Cixin [Liu, Cixin]" and
+-- "Crouch, Blake" -> "Cixin Liu", "Blake Crouch". Several authors, or a
+-- comma that isn't "Last, First", are left alone.
+function Data.authorName(a)
+    if type(a) ~= "string" then return a end
+    a = a:gsub("%s*%[.-%]%s*$", "")
+    local last, first = a:match("^%s*([^,&]+),%s*([^,&]+)%s*$")
+    if last and first and not first:find("%s%a+%s") then return first .. " " .. last end
+    return a
 end
 
 -- Seconds spent reading between two times (any device, the statistics).
