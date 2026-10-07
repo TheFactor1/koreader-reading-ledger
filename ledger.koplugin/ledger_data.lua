@@ -356,7 +356,9 @@ end
 --   hours    [0..23] share of your page turns in each hour (sums to 1)
 --   first    the first day the statistics saw (as "YYYY-MM-DD"), or nil
 -- nil when there are no statistics at all.
-local habits_cache = nil   -- { date, weeks, out }: past days don't change
+local habits_cache = nil   -- { fp, weeks, out }: until the statistics change
+                           -- (synced reading from other devices lands on
+                           -- past days too)
 
 -- (callers get their own copy: the merge with Readest and this device's
 -- progress adds to it, and the cache must not keep those additions)
@@ -371,40 +373,14 @@ end
 function Data.readingHabits(weeks, now)
     weeks = weeks or 8
     now = now or os.time()
-    local today = os.date("%Y-%m-%d", now)
-    if habits_cache and habits_cache.date == today and habits_cache.weeks == weeks then
-        -- only today can have moved on since: one quick query
-        local out = habits_cache.out
-        if out then
-            local t = os.date("*t", now)
-            local midnight = os.time{ year = t.year, month = t.month, day = t.day, hour = 0 }
-            local n = Data._countSince(midnight)
-            if n then out.days[today] = n > 0 and n or nil end
-        end
-        return copyHabits(out)
+    -- (the fingerprint: row count, newest turn and sums, and today's date)
+    local fp = Data.statsFingerprint() or os.date("%Y-%m-%d", now)
+    if habits_cache and habits_cache.fp == fp and habits_cache.weeks == weeks then
+        return copyHabits(habits_cache.out)
     end
     local out = Data._readingHabits(weeks, now)
-    habits_cache = { date = today, weeks = weeks, out = out }
+    habits_cache = { fp = fp, weeks = weeks, out = out }
     return copyHabits(out)
-end
-
--- Distinct pages turned since a time (nil without statistics).
-function Data._countSince(t0)
-    local db_path = DataStorage:getSettingsDir() .. "/statistics.sqlite3"
-    if lfs.attributes(db_path, "mode") ~= "file" then return nil end
-    local ok, SQ3 = pcall(require, "lua-ljsqlite3/init")
-    if not ok then return nil end
-    local dok, db = pcall(SQ3.open, db_path, "ro")
-    if not dok or not db then return nil end
-    local n
-    pcall(function()
-        local stmt = db:prepare("SELECT count(DISTINCT id_book || ':' || page) FROM page_stat_data WHERE start_time >= ?")
-        local row = stmt:reset():bind(t0):step()
-        n = row and tonumber(row[1]) or 0
-        stmt:close()
-    end)
-    db:close()
-    return n
 end
 
 function Data._readingHabits(weeks, now)

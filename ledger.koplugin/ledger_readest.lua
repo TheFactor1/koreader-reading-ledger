@@ -287,10 +287,15 @@ function R.mergeHabits(habits, store)
         by_hour[h] = (habits.hours[h] or 0) * own
         turns = turns + by_hour[h]
     end
-    -- this device: whichever saw more, the statistics or the position
-    for d, p in pairs(dev_days) do
-        if p > (habits.days[d] or 0) then habits.days[d] = p end
-        if not habits.first or d < habits.first then habits.first = d end
+    -- this device's moves in its books stand in only without statistics:
+    -- with them on, they're the truth (synced from every device), and a
+    -- move is no measure of reading -- a jump to the end, the notes, or to
+    -- where another device got to all moved the position without a page read
+    if own == 0 then
+        for d, p in pairs(dev_days) do
+            if p > (habits.days[d] or 0) then habits.days[d] = p end
+            if not habits.first or d < habits.first then habits.first = d end
+        end
     end
     -- plus what was read in Readest elsewhere
     for d, p in pairs(s.days) do

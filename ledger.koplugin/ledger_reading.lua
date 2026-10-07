@@ -253,9 +253,23 @@ function Reading:build(squeeze)
         gap(s(14))
     end
 
+    -- a race that just ended (the book's last page in the last day): said
+    -- here, where you land when you close the book
+    local res = plugin:raceResults()
+    local last = res.list and res.list[1]
+    if last and last.at and os.time() - last.at < 86400 then
+        local rival_name = plugin:petName(last.rival or plugin:rival())
+        local title = last.title or "the book"
+        local said = last.won
+            and string.format("You finished %s and beat %s by %d %s. The fish is yours.", title, rival_name,
+                last.by or 0, (last.by or 0) == 1 and "page" or "pages")
+            or string.format("You finished %s, but %s got to the flag first. Rematch?", title, rival_name)
+        add(UI.tappable(UI.para(said, "bold", 13, cw), function() plugin:showResults() end))
+        gap(s(12))
+    end
+
     -- stats
     local today_n, week_n, streak_n = plugin:readingCounts()
-    local res = plugin:raceResults()
     local won, lost = res.won, res.lost
     local bw = math.floor(cw / 4)
     add(UI.rule(cw, s(2)))
