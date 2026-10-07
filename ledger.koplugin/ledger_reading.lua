@@ -44,6 +44,7 @@ local Reading = InputContainer:extend{
     cache = nil,
     index = 1,      -- which book on the go is shown
 }
+UI.refitOnResize(Reading)
 
 function Reading:init()
     self.dimen = Geom:new{ x = 0, y = 0, w = Screen:getWidth(), h = Screen:getHeight() }
@@ -320,7 +321,10 @@ function Reading:build(squeeze)
             UI.text(string.format("%d/%d in %s", hc.goal.progress or 0, hc.goal.goal,
                 (hc.goal.end_date or ""):match("^(%d%d%d%d)") or os.date("%Y")), "pix", 10))
     else
-        foot[#foot + 1] = UI.tappable(UI.text("Add your Hardcover key in Settings for your yearly goal ›", "body", 11, UI.INK2, cw),
+        -- (a key that's there but refused says so, not "add your key")
+        local refused = plugin:hardcoverToken() and c.hardcover_rejected
+        foot[#foot + 1] = UI.tappable(UI.text(refused and "Hardcover didn't accept your key: check it in Settings ›"
+                or "Add your Hardcover key in Settings for your yearly goal ›", "body", 11, UI.INK2, cw),
             function() plugin:showTab("settings") end)
     end
     foot[#foot + 1] = UI.vspace(s(12))

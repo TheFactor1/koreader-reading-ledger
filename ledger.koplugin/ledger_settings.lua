@@ -19,6 +19,7 @@ local Settings = InputContainer:extend{
     covers_fullscreen = true,
     plugin = nil,
 }
+UI.refitOnResize(Settings)
 
 function Settings:init()
     self.dimen = Geom:new{ x = 0, y = 0, w = Screen:getWidth(), h = Screen:getHeight() }

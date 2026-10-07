@@ -44,6 +44,7 @@ local Library = InputContainer:extend{
     sort = "recent",
     page = 1,
 }
+UI.refitOnResize(Library)
 
 function Library:init()
     self.dimen = Geom:new{ x = 0, y = 0, w = Screen:getWidth(), h = Screen:getHeight() }

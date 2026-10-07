@@ -32,6 +32,7 @@ local Onboard = InputContainer:extend{
     plugin = nil,
     step = 1,
 }
+UI.refitOnResize(Onboard)
 
 local STEPS = 4
 

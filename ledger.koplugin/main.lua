@@ -445,7 +445,8 @@ function Ledger:show()
     UIManager:nextTick(function() Timing.lap(t, "show.drawn") end)
     if not self.settings:readSetting("onboarded") then
         local Onboard = require("ledger_onboard")
-        UIManager:show(Onboard:new{ plugin = self })
+        self.onboard = Onboard:new{ plugin = self }
+        UIManager:show(self.onboard)
         return
     end
     self.cache = Data.loadCache()
@@ -532,6 +533,40 @@ function Ledger:redraw()
         page:update()
     end
 end
+
+-- The screen changed size (rotation; a window resized on Android or a
+-- desktop): each page lays itself out, and sets its tap areas, for the size
+-- it was made at -- so a page that no longer fits is made again.
+function Ledger:refit()
+    local w, h = Device.screen:getWidth(), Device.screen:getHeight()
+    local function stale(p)
+        return p and UIManager:isWidgetShown(p) and p.dimen and (p.dimen.w ~= w or p.dimen.h ~= h)
+    end
+    if stale(self.page) then
+        self:showTab(self.tab, { filter = self.tab == "library" and self.page.filter or nil })
+    end
+    if stale(self.book_page) then self:showBook(self.book_page.rec) end   -- (back on top)
+    if stale(self.onboard) then
+        local step = self.onboard.step
+        UIManager:close(self.onboard)
+        self.onboard = require("ledger_onboard"):new{ plugin = self, step = step }
+        UIManager:show(self.onboard)
+    end
+end
+
+function Ledger:refitSoon()
+    if self._refit_pending then return end
+    self._refit_pending = true
+    UIManager:nextTick(function()
+        self._refit_pending = false
+        self:refit()
+    end)
+end
+
+-- (the file browser's rotation reaches its plugins; a resize reaches every
+-- window, the Ledger's pages included, which pass it on here)
+function Ledger:onSetDimensions() self:refitSoon() end
+function Ledger:onScreenResize() self:refitSoon() end
 
 function Ledger:closeAll()
     -- (not ipairs over the widgets: it stops at the first nil)

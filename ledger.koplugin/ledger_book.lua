@@ -27,6 +27,7 @@ local Book = InputContainer:extend{
     rec = nil,      -- a Data record
     hc = nil,       -- Hardcover details once fetched: status_id, rating, avg_rating, series...
 }
+UI.refitOnResize(Book)
 
 function Book:init()
     self.dimen = Geom:new{ x = 0, y = 0, w = Screen:getWidth(), h = Screen:getHeight() }

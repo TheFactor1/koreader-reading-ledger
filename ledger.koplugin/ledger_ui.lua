@@ -237,6 +237,13 @@ end
 -- A tap on the top strip of a Ledger page (or a swipe down from it) opens
 -- KOReader's own menu, as it does everywhere else in KOReader. Buttons up
 -- there still get their taps first: the page only sees taps nothing used.
+-- A page made for one screen size asks the Ledger to make it again when the
+-- size changes (see Ledger:refit).
+function UI.refitOnResize(Page)
+    function Page:onSetDimensions() if self.plugin then self.plugin:refitSoon() end end
+    function Page:onScreenResize() if self.plugin then self.plugin:refitSoon() end end
+end
+
 function UI.addTopMenu(page)
     local W, H = Screen:getWidth(), Screen:getHeight()
     local band = Geom:new{ x = 0, y = 0, w = W, h = math.floor(H / 10) }
