@@ -122,10 +122,20 @@ function Data.justIn(dirs, max_age_days, limit)
     end
     table.sort(found, function(a, b) return a.added > b.added end)
     while #found > (limit or 6) do table.remove(found) end
-    -- "Author - Title" is how Bookbridge names downloads
+    -- "Author - Title" is how Bookbridge names downloads; other sources
+    -- name them "Title - Author", so the book's own metadata (KOReader's
+    -- cover-browser cache, when it has read the book) wins over the guess
+    local bim_ok, BIM = pcall(require, "bookinfomanager")
     for _, r in ipairs(found) do
         local author, title = r.title:match("^(.-)%s+%-%s+(.+)$")
         if author and title then r.author, r.title = author, title end
+        if bim_ok and BIM then
+            local iok, info = pcall(BIM.getBookInfo, BIM, r.file, false)
+            if iok and info then
+                if type(info.title) == "string" and info.title ~= "" then r.title = info.title end
+                if type(info.authors) == "string" and info.authors ~= "" then r.author = info.authors:gsub("\n.*", "") end
+            end
+        end
     end
     return found
 end
@@ -149,16 +159,19 @@ function Data.library(dirs, readest, matches)
         if DocSettings:hasSidecarFile(path) then
             rec = Data.localRecord(path, last_open[path])
         end
+        local guessed = false
         if not rec then
             rec = { file = path, title = basenameTitle(path), opened = false }
+            -- a guess from the file name, "Author - Title" (as often
+            -- "Title - Author": the book's own metadata below wins)
             local author, title = rec.title:match("^(.-)%s+%-%s+(.+)$")
-            if author and title then rec.author, rec.title = author, title end
+            if author and title then rec.author, rec.title, guessed = author, title, true end
         end
         if bim_ok and BIM then
             local iok, info = pcall(BIM.getBookInfo, BIM, path, false)
             if iok and info then
                 if not rec.opened and type(info.title) == "string" and info.title ~= "" then rec.title = info.title end
-                if not rec.author and type(info.authors) == "string" and info.authors ~= "" then
+                if (guessed or not rec.author) and type(info.authors) == "string" and info.authors ~= "" then
                     rec.author = info.authors:gsub("\n.*", "")
                 end
                 if not rec.series and type(info.series) == "string" and info.series ~= "" then

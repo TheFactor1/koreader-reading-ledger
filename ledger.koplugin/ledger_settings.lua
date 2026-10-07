@@ -54,13 +54,16 @@ local function row(cw, icon, label, hint, value, callback, pad)
         left[#left + 1] = UI.hspace(icon_w)
     end
     left[#left + 1] = UI.hspace(s(10))
-    local text_w = math.floor(cw * 0.6)
+    -- values in the pixel font; a plain arrow for rows that open something.
+    -- The value is measured first and kept whole (up to 40% of the row);
+    -- the name and hint take what's left
+    local lead = icon_w + s(10)
+    local val = value == "›" and UI.text("›", "bold", 16)
+        or UI.text(value or "", "pix", 10, UI.BLACK, math.floor(cw * 0.4))
+    local text_w = math.min(math.floor(cw * 0.6), cw - lead - val:getSize().w - s(16))
     local labels = VerticalGroup:new{ align = "left", UI.text(label, "bold", 13, UI.BLACK, text_w) }
     if hint then labels[#labels + 1] = UI.text(hint, "body", 10, UI.INK2, text_w) end
     left[#left + 1] = labels
-    -- values in the pixel font; a plain arrow for rows that open something
-    local val = value == "›" and UI.text("›", "bold", 16)
-        or UI.text(value or "", "pix", 10, UI.BLACK, cw - left:getSize().w - s(20))
     local line = VerticalGroup:new{ align = "left",
         UI.vspace(pad), UI.spread(cw, left, val), UI.vspace(pad), UI.rule(cw, s(1), UI.INK3) }
     return callback and UI.tappable(line, callback) or line
@@ -98,6 +101,17 @@ function Settings:build(level)
     end
     if not labels then add(UI.rule(cw, s(1), UI.INK3)) end
 
+    -- the rows go in a column: one in portrait; in landscape two side by
+    -- side (the race on the left, the rest on the right) -- ten rows
+    -- stacked don't fit a landscape screen at any spacing
+    local two = W > H
+    local col_gap = s(24)
+    local colw = two and math.floor((cw - col_gap) / 2) or cw
+    local left_col = VerticalGroup:new{ align = "left" }
+    local right_col = two and VerticalGroup:new{ align = "left" } or left_col
+    local col = left_col
+    local function put(w) col[#col + 1] = w end
+
     -- three groups, each under a small label: the race (yours to shape),
     -- your accounts and where books come from, and the Ledger itself.
     -- (the labels go when the page has no room for them)
@@ -105,35 +119,36 @@ function Settings:build(level)
         if not labels then return end
         local above = (level == 1 and s(14)) or (level == 2 and s(6)) or (level == 3 and s(2)) or 0
         local below = (level == 1 and s(4)) or (level == 2 and s(2)) or 0
-        add(UI.vspace(above))
-        add(UI.text(label, "pix", 9, UI.INK2))
-        if below > 0 then add(UI.vspace(below)) end
-        add(UI.rule(cw, s(1), UI.INK3))
+        put(UI.vspace(above))
+        put(UI.text(label, "pix", 9, UI.INK2))
+        if below > 0 then put(UI.vspace(below)) end
+        put(UI.rule(colw, s(1), UI.INK3))
     end
 
     group("THE RACE")
     local Race = require("ledger_race")
     local you, rival = Race.animal(p:runner()), Race.animal(p:rival())
-    add(row(cw, you.still, "You run as", "Tap to pick an animal or rename it",
+    put(row(colw, you.still, "You run as", "Tap to pick an animal or rename it",
         (you.label .. " · " .. p:petName(you.id)):upper(), function() p:chooseAnimal("runner") end))
-    add(row(cw, rival.still, "Your rival", rival.hint,
+    put(row(colw, rival.still, "Your rival", rival.hint,
         (rival.label .. " · " .. p:petName(rival.id)):upper(), function() p:chooseAnimal("rival") end))
-    add(row(cw, nil, string.format("What %s has learned", p:petName(rival.id)), "Your reading habits, and how it's tuned",
+    put(row(colw, nil, string.format("What %s has learned", p:petName(rival.id)), "Your reading habits, and how it's tuned",
         "›", function() p:showHabits() end))
     local Chase = require("ledger_chase")
     local look = "FIELD"
     for _, sty in ipairs(Chase.STYLES) do if sty.id == p:raceStyle() then look = sty.label:upper() end end
-    add(row(cw, nil, "Race look", "Field, running track, trail, bookshelves, scoreboard", look,
+    put(row(colw, nil, "Race look", "Field, running track, trail, bookshelves, scoreboard", look,
         function() p:chooseRaceStyle() end))
-    add(row(cw, nil, "Animations", "The runners sprint in when the page opens",
+    put(row(colw, nil, "Animations", "The runners sprint in when the page opens",
         p:animationsOn() and "ON" or "OFF", function() p:toggleAnimations() end))
 
+    col = right_col
     group("ACCOUNTS AND BOOKS")
-    add(row(cw, nil, "Readest", st.readest_hint, st.readest, function()
+    put(row(colw, nil, "Readest", st.readest_hint, st.readest, function()
         local bb = p:bookbridge()
         if bb and bb.readestNext then bb:readestNext() end
     end))
-    add(row(cw, "fish", "Hardcover", st.hardcover_hint, st.hardcover, function() p:editHardcoverKey() end))
+    put(row(colw, "fish", "Hardcover", st.hardcover_hint, st.hardcover, function() p:editHardcoverKey() end))
     -- where books come from: one row, one dialog with Z-Library, Anna's
     -- Archive and Bookbridge itself (the page has no room for three)
     do
@@ -149,15 +164,20 @@ function Settings:build(level)
         if st.annas and st.annas ~= "NO KEY" and st.annas ~= "KEY REFUSED" then ready = ready + 1 end
         local value = st.bookbridge == "NOT INSTALLED" and "NOT INSTALLED"
             or (ready > 0 and string.format("%d SOURCE%s", ready, ready == 1 and "" or "S") or st.bookbridge)
-        add(row(cw, nil, "Books", table.concat(parts, " · "), value, function() p:showBooksSetup() end))
+        put(row(colw, nil, "Books", table.concat(parts, " · "), value, function() p:showBooksSetup() end))
     end
 
     group("THE LEDGER")
-    add(row(cw, nil, "Open on start", "When KOReader starts and when you close a book",
+    put(row(colw, nil, "Open on start", "When KOReader starts and when you close a book",
         p:homeOn() and "ON" or "OFF", function() p:toggleHome() end))
     -- (refreshing is automatic; the button for doing it now is in here)
-    add(row(cw, nil, "About and updates", "Version, check for updates, refresh, credits", "›", function() p:showAbout() end))
+    put(row(colw, nil, "About and updates", "Version, check for updates, refresh, credits", "›", function() p:showAbout() end))
 
+    if two then
+        add(HorizontalGroup:new{ align = "top", left_col, UI.hspace(col_gap), right_col })
+    else
+        add(left_col)
+    end
     local foot = UI.tabBar(cw, "settings", function(id) p:showTab(id) end)
     local used = main:getSize().h + foot:getSize().h + 2 * m
     -- (kept for a look from the inspector: what each level needed)

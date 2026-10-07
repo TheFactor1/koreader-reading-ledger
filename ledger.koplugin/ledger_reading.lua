@@ -169,7 +169,9 @@ function Reading:build(squeeze)
         gap(s(30))
     else
         -- cover and details
-        local cover_w = math.floor(cw * (0.36 - 0.05 * squeeze))
+        -- (and by the height: in landscape a width-sized cover alone takes
+        -- half the screen and pushes the tabs off the bottom)
+        local cover_w = math.floor(math.min(cw * (0.36 - 0.05 * squeeze), H * (0.30 - 0.04 * squeeze) / 1.5))
         local cover = UI.tappable((UI.cover(rec, cover_w, math.floor(cover_w * 1.5))), function() plugin:showBook(rec) end)
         Timing.lap(tt, "build.cover" .. squeeze)
         local info_w = cw - cover_w - s(16)
@@ -234,7 +236,7 @@ function Reading:build(squeeze)
         local lines = Race.lines(plugin, rec, race, self.cache)
         Timing.lap(tt, "build.race" .. squeeze)
         local chase = Chase:new{
-            width = cw, height = math.floor(H * (0.19 - 0.02 * squeeze)),
+            width = cw, height = math.floor(H * (0.19 - 0.02 * math.min(squeeze, 3))),
             you = plugin:runner(), rival = plugin:rival(), style = plugin:raceStyle(),
             you_pct = race.you_pct, rival_pct = race.rival_pct, napping = race.napping,
             you_says = lines.you_says, rival_says = lines.rival_says, fish_says = lines.fish_says,
@@ -285,12 +287,15 @@ function Reading:build(squeeze)
         links[#links + 1] = UI.tappable(UI.text(string.format("waiting for %d ›", n_wait), "body", 12),
             function() plugin:showTab("library", { filter = "requested" }) end)
     end
-    add(HorizontalGroup:new(links))
+    -- (the last things to go when the page is short: the tabs must fit)
+    if squeeze < 5 then add(HorizontalGroup:new(links)) end
 
     -- footer: goal, then the tabs
     local foot = VerticalGroup:new{ align = "left" }
     local hc = c.hardcover
-    if hc and hc.goal and hc.goal.goal then
+    if squeeze >= 4 then
+        -- (no room: the goal lives in Settings too)
+    elseif hc and hc.goal and hc.goal.goal then
         local fish = UI.fishRow(math.min(hc.goal.goal, 24), hc.goal.progress or 0, cw / 22)
         foot[#foot + 1] = UI.spread(cw, fish,
             UI.text(string.format("%d/%d in %s", hc.goal.progress or 0, hc.goal.goal,
@@ -304,7 +309,7 @@ function Reading:build(squeeze)
 
     local used = main:getSize().h + foot:getSize().h + 2 * m
     Timing.lap(tt, "build.rest" .. squeeze)
-    if used > H and squeeze < 3 then return self:build(squeeze + 1) end
+    if used > H and squeeze < 5 then return self:build(squeeze + 1) end
     squeeze_fits[size_key] = squeeze
     -- share the spare room: up to s(20) more per gap, the rest stays above
     -- the footer (the gap after the arrivals line is the last one)

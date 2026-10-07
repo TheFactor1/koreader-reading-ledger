@@ -108,6 +108,13 @@ function Ledger:init()
     if not self.ui.document then
         -- the file browser: show the Ledger on top when it's the home screen
         local show_now = (first_start or back_from_book) and self:homeOn()
+        -- just installed (copied in, or by Bookbridge): introduce itself
+        -- once, with its setup, rather than wait to be found in Tools
+        if first_start and not self.settings:readSetting("onboarded") and not self.settings:readSetting("introduced") then
+            self.settings:saveSetting("introduced", true)
+            self.settings:flush()
+            show_now = true
+        end
         first_start, back_from_book = false, false
         if show_now then
             -- KOReader tells the file browser's plugins it's being shown
