@@ -106,6 +106,7 @@ function Ledger:init()
     -- (the old "home" switch becomes start_with = "ledger")
     if self.settings:readSetting("home") == true and not self:homeOn() then self:setHome(true) end
     if not self.ui.document then
+        self:takeHomeButton()
         -- the file browser: show the Ledger on top when it's the home screen
         local show_now = (first_start or back_from_book) and self:homeOn()
         -- just installed (copied in, or by Bookbridge): introduce itself
@@ -161,6 +162,36 @@ function Ledger:onShow()
         self._from_book = not first_start_show
         first_start_show = false
         self:show()
+    end
+end
+
+-- The file browser's Home button (the house, top left) leads home: to the
+-- Ledger, when it's the home screen -- after "Files >" it was the only way
+-- back short of Tools > Reading Ledger. Holding it still opens KOReader's
+-- folder menu, and with the Ledger not home it goes to the home folder.
+function Ledger:takeHomeButton()
+    local fm = self.ui
+    -- (the file browser builds its title bar after its plugins start, and
+    -- again on rotation: take the button each time it's built. The button,
+    -- not onHome -- "Go to HOME folder" in the + menu must still go there.)
+    if fm and not fm._ledger_layout and type(fm.setupLayout) == "function" then
+        fm._ledger_layout = true
+        local setup = fm.setupLayout
+        local ledger = self
+        fm.setupLayout = function(...)
+            local r = setup(...)
+            pcall(ledger.takeHomeButton, ledger)
+            return r
+        end
+    end
+    local button = fm and fm.title_bar and fm.title_bar.left_button
+    if not button or button._ledger_home then return end
+    local own = button.callback
+    button._ledger_home = true
+    local ledger = self
+    button.callback = function()
+        if ledger:homeOn() then return ledger:show() end
+        if own then return own() end
     end
 end
 
