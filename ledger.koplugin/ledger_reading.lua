@@ -274,6 +274,7 @@ function Reading:build(squeeze)
     -- a race that just ended (the book's last page in the last day): said
     -- here, where you land when you close the book
     local res = plugin:raceResults()
+    Timing.lap(tt, "rest.raceResults" .. squeeze)
     local last = res.list and res.list[1]
     if last and last.at and os.time() - last.at < 86400 then
         local rival_name = plugin:petName(last.rival or plugin:rival())
@@ -292,8 +293,10 @@ function Reading:build(squeeze)
         gap(s(12))
     end
 
+    Timing.lap(tt, "rest.finishedLine" .. squeeze)
     -- stats
     local today_n, week_n, streak_n = plugin:readingCounts()
+    Timing.lap(tt, "rest.readingCounts" .. squeeze)
     local won, lost = res.won, res.lost
     local bw = math.floor(cw / 4)
     add(UI.rule(cw, s(2)))
@@ -323,6 +326,7 @@ function Reading:build(squeeze)
         gap(s(8))
     end
 
+    Timing.lap(tt, "rest.statsAndFriends" .. squeeze)
     -- arrivals and waiting, one line into the library
     local n_new = #(d.just_in or {})
     local n_wait, n_ready = 0, 0

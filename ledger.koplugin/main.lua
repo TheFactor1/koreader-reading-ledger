@@ -60,6 +60,10 @@ local shared_settings = nil
 local first_start = true
 local first_start_show = true   -- (the first home show of the session is a cold start)
 local exit_timer = nil    -- (timing: from closing a book to the Ledger drawn)
+-- Shown before in this KOReader session: the plugin is made anew with every
+-- file browser -- closing a book builds a new one -- so this can't live on
+-- the instance (it did, and every close flashed: 0.37 s on Matt's Kindle).
+local shown_once = false
 local registerStartWith   -- (below, with the home screen)
 local back_from_book = false
 
@@ -501,8 +505,8 @@ function Ledger:showTab(id, opts)
     self.page, self.tab = page, id
     -- (one full flash the first time; after that, coming back from a book
     -- or switching tabs, a plain update: no black flash)
-    UIManager:show(page, self._shown_once and "ui" or "flashui")
-    self._shown_once = true
+    UIManager:show(page, shown_once and "ui" or "flashui")
+    shown_once = true
     if old and UIManager:isWidgetShown(old) then UIManager:close(old) end
     if id == "library" then
         self:fetchCoversFor(page:visible(), function() page:refreshCovers() end)
