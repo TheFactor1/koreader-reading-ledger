@@ -588,14 +588,19 @@ function UI.cover(rec, w, h)
     if hit then
         return coverFrame(ImageWidget:new{ image = hit, image_disposable = false }, w, h), true
     end
-    -- a cover image file (trending books, which aren't on the device)
+    -- a cover image file (trending books, vibes, Want to Read: not on the
+    -- device). Decoded once, shrunk to the frame and kept small: Hardcover's
+    -- images are full size (2560 px tall), and handing those to an
+    -- ImageWidget filled KOReader's image cache until it asserted -- which
+    -- closed KOReader on a Kindle opening a vibe's shelf.
     if rec.cover_file and lfs.attributes(rec.cover_file, "mode") == "file" then
-        local b = Screen:scaleBySize(2)
-        local CenterContainer = require("ui/widget/container/centercontainer")
-        local img = ImageWidget:new{ file = rec.cover_file, width = w - 2 * b, height = h - 2 * b,
-            stretch_limit_percentage = 10 }
-        return FrameContainer:new{ bordersize = b, padding = 0, margin = 0, background = UI.WHITE,
-            CenterContainer:new{ dimen = Geom:new{ w = w - 2 * b, h = h - 2 * b }, img } }, true
+        local ok, full = pcall(RenderImage.renderImageFile, RenderImage, rec.cover_file, false)
+        if ok and full then
+            local tw, th = fitSize(full:getWidth(), full:getHeight(), w - 2 * b, h - 2 * b)
+            local scaled = RenderImage:scaleBlitBuffer(full, tw, th, true)
+            keepCover(key, scaled)
+            return coverFrame(ImageWidget:new{ image = scaled, image_disposable = false }, w, h), true
+        end
     end
     local bim_ok, BIM = pcall(require, "bookinfomanager")
     if bim_ok and BIM and rec.file then
