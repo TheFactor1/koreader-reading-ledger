@@ -1149,10 +1149,32 @@ end
 -- to request it.
 function Ledger:showShelfBook(rec)
     if rec.on_device then return self:openBook(rec.on_device) end
+    if rec.requested and rec.state == "ready" and self:bookbridge() then
+        -- delivered to Calibre-Web: Bookbridge fetches it from there
+        local bb = self:bookbridge()
+        local ButtonDialog = require("ui/widget/buttondialog")
+        local dlg
+        dlg = ButtonDialog:new{
+            title = (rec.title or "?") .. (rec.author and ("\n" .. rec.author) or "") .. "\n\n"
+                .. _("Shelfmark has delivered it to your server (Calibre-Web). Get it on this device?"),
+            buttons = { {
+                { text = _("Close"), callback = function() UIManager:close(dlg) end },
+                { text = _("Get it"), callback = function()
+                    UIManager:close(dlg)
+                    local Trapper = require("ui/trapper")
+                    Trapper:wrap(function() bb:downloadFromCwa(rec.title) end)
+                end },
+            } },
+        }
+        UIManager:show(dlg)
+        return
+    end
     if rec.requested then
         UIManager:show(InfoMessage:new{
             text = (rec.title or "?") .. (rec.author and ("\n" .. rec.author) or "") .. "\n\n"
-                .. _("Requested through Bookbridge; it hasn't arrived yet. It shows up under New when it does."),
+                .. (rec.state == "pending" and _("Requested through Bookbridge, waiting for approval on Shelfmark.")
+                    or _("Requested through Bookbridge and approved; Shelfmark is getting it."))
+                .. " " .. _("It shows up under New when it's on this device."),
             timeout = 5,
         })
         return
@@ -1620,7 +1642,20 @@ function Ledger:showTrending(rec)
     UIManager:show(dlg)
 end
 
--- Books you asked Shelfmark for that haven't arrived: Bookbridge's requests.
+-- Books you asked Shelfmark for that aren't on this device yet:
+-- Bookbridge's requests (Shelfmark lists only your own). "Delivered" there
+-- means Shelfmark handed the file to Calibre-Web, not that it reached this
+-- Kindle -- such a request used to vanish from Requested the moment it was
+-- delivered, with the book still on the server (Matt, 2026-10-07: requested,
+-- approved, "it never shows up"). It now stays, ready to get, until it's on
+-- the device or two weeks have gone by; requests that were rejected or
+-- cancelled aren't waiting for anything and aren't listed.
+local REQUEST_NOTE = {
+    pending = "waiting for approval on Shelfmark",
+    coming = "approved: Shelfmark is getting it",
+    ready = "on your server: tap to get it",
+}
+
 function Ledger:refreshRequests()
     local bb = self:bookbridge()
     if not bb or not bb.server_url or bb.server_url == "" then return end
@@ -1631,15 +1666,12 @@ function Ledger:refreshRequests()
         if code ~= 200 or type(resp) ~= "table" then return end
         local list = resp.requests or resp
         if type(list) ~= "table" then return end
-        local waiting = {}
+        local waiting, now = {}, os.time()
+        local function onDevice(title, author) return title and self:findOnDevice(title, author) ~= nil end
         for _, r in ipairs(list) do
-            if type(r) == "table" and r.delivery_state ~= "complete" then
-                local bd = type(r.book_data) == "table" and r.book_data or {}
-                waiting[#waiting + 1] = {
-                    title = type(r.title) == "string" and r.title or bd.title or "?",
-                    author = type(bd.author) == "string" and bd.author or nil,
-                    note = "requested, not found yet",
-                }
+            local state, title, author = Data.requestState(r, now, onDevice)
+            if state then
+                waiting[#waiting + 1] = { title = title or "?", author = author, state = state, note = REQUEST_NOTE[state] }
             end
         end
         self.cache.requests = waiting

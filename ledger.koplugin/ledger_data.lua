@@ -829,4 +829,40 @@ function Data.finishedTurns()
     return out
 end
 
+-- ---------------------------------------------------------------- requests
+-- (see Ledger:refreshRequests)
+local READY_KEEP = 14 * 86400
+
+-- "2026-10-07T19:50:35+00:00" / "2026-10-07 19:49:23" (UTC) -> a time
+function Data.utcTime(v)
+    if type(v) ~= "string" then return nil end
+    local y, mo, d, h, mi, sec = v:match("^(%d+)-(%d+)-(%d+)[T ](%d+):(%d+):(%d+)")
+    if not y then return nil end
+    local t = os.time{ year = tonumber(y), month = tonumber(mo), day = tonumber(d), hour = tonumber(h), min = tonumber(mi), sec = tonumber(sec) }
+    -- (os.time read it as local time: add this zone's offset back)
+    local now = os.time()
+    return t + os.difftime(now, os.time(os.date("!*t", now)))
+end
+
+-- What each of Shelfmark's requests means here: "pending", "coming",
+-- "ready", or nil (not waiting). on_device(title, author) says whether it
+-- has arrived.
+function Data.requestState(r, now, on_device)
+    if type(r) ~= "table" then return nil end
+    local st, ds = r.status, r.delivery_state
+    if st == "rejected" or st == "cancelled" or st == "declined" then return nil end
+    if ds == "error" or ds == "cancelled" then return nil end   -- (Bookbridge says so, once)
+    local bd = type(r.book_data) == "table" and r.book_data or {}
+    local title = type(r.title) == "string" and r.title or bd.title
+    local author = type(bd.author) == "string" and bd.author or nil
+    if ds == "complete" then
+        local at = Data.utcTime(r.delivery_updated_at) or Data.utcTime(r.reviewed_at) or Data.utcTime(r.created_at)
+        if not at or now - at > READY_KEEP then return nil end
+        if on_device and on_device(title, author) then return nil end
+        return "ready", title, author
+    end
+    if on_device and title and on_device(title, author) then return nil end
+    return st == "pending" and "pending" or "coming", title, author
+end
+
 return Data

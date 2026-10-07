@@ -100,6 +100,7 @@ function Library:shelfList(items, extra)
                 title = item.title, author = item.author, year = item.year,
                 cover_file = item.cover, trending = true,
                 on_device = have[tostring(item.title):lower()],
+                state = item.state,
             }
             for k, v in pairs(extra or {}) do rec[k] = v end
             list[#list + 1] = rec
@@ -243,7 +244,7 @@ end
 local function statusOf(rec)
     if rec.trending then
         if rec.on_device then return "finished", nil, "ON DEVICE" end
-        if rec.requested then return "unread", nil, "WAITING" end
+        if rec.requested then return "unread", nil, rec.state == "ready" and "READY" or "WAITING" end
         return "unread", nil, rec.year and tostring(rec.year) or nil
     end
     local st = Data.status(rec)

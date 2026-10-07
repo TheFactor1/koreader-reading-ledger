@@ -325,7 +325,10 @@ function Reading:build(squeeze)
 
     -- arrivals and waiting, one line into the library
     local n_new = #(d.just_in or {})
-    local n_wait = #(c.requests or {})
+    local n_wait, n_ready = 0, 0
+    for _, r in ipairs(c.requests or {}) do
+        if r.state == "ready" then n_ready = n_ready + 1 else n_wait = n_wait + 1 end
+    end
     -- two links: the new ones, and -- with a book server, where requests
     -- can wait -- the ones on order (the Requested shelf)
     local bb = plugin:bookbridge()
@@ -336,7 +339,9 @@ function Reading:build(squeeze)
     }
     if has_server then
         links[#links + 1] = UI.text("   ·   ", "body", 12, UI.INK2)
-        links[#links + 1] = UI.tappable(UI.text(string.format("waiting for %d ›", n_wait), "body", 12),
+        -- (books delivered to the server first: they only need a tap)
+        local label = n_ready > 0 and string.format("%d ready to get ›", n_ready) or string.format("waiting for %d ›", n_wait)
+        links[#links + 1] = UI.tappable(UI.text(label, "body", 12),
             function() plugin:showTab("library", { filter = "requested" }) end)
     end
     -- (the last things to go when the page is short: the tabs must fit)
