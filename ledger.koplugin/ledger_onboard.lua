@@ -37,6 +37,11 @@ UI.refitOnResize(Onboard)
 local STEPS = 4
 
 function Onboard:init()
+    -- (back where it was left: a restart in the middle -- an install's
+    -- "Restart now" -- shouldn't send you to step 1)
+    if self.step == 1 and self.plugin then
+        self.step = math.max(1, math.min(STEPS, tonumber(self.plugin.settings:readSetting("onboard_step")) or 1))
+    end
     self.dimen = Geom:new{ x = 0, y = 0, w = Screen:getWidth(), h = Screen:getHeight() }
     if Device:hasKeys() then
         self.key_events = { SkipSetup = { { Device.input.group.Back } } }
@@ -65,12 +70,15 @@ end
 function Onboard:go(step)
     if step > STEPS then return self:finish() end
     self.step = math.max(1, step)
+    self.plugin.settings:saveSetting("onboard_step", self.step)
+    self.plugin.settings:flush()
     self:update()
 end
 
 function Onboard:finish()
     local p = self.plugin
     p.settings:saveSetting("onboarded", true)
+    p.settings:delSetting("onboard_step")
     p.settings:flush()
     UIManager:close(self)
     p:show()
