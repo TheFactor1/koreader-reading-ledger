@@ -1454,7 +1454,9 @@ function Ledger:finishedBooks()
             local name = " " .. norm(m.title) .. " "
             for _, have in ipairs(out) do
                 local t = norm(have.title)
-                if #t >= 3 and name:find(" " .. t .. " ", 1, true) then e.title, e.author = have.title, have.author; break end
+                -- (the name starts with the title: "Pines" is inside "Wayward
+                -- Pines - 02 Wayward" but that's book 2, not Pines)
+                if #t >= 3 and name:sub(1, #t + 2) == " " .. t .. " " then e.title, e.author = have.title, have.author; break end
             end
             -- (no match: an author we know, at the end of the name, comes off)
             if not e.author then
