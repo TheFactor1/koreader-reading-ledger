@@ -551,6 +551,7 @@ function Ledger:refit()
         self:showTab(self.tab, { filter = self.tab == "library" and self.page.filter or nil })
     end
     if stale(self.book_page) then self:showBook(self.book_page.rec) end   -- (back on top)
+    if stale(self.year_page) then self:showYear(self.year_page.year) end
     if stale(self.onboard) then
         local step = self.onboard.step
         UIManager:close(self.onboard)
@@ -1131,6 +1132,13 @@ function Ledger:showShelfBook(rec)
         return
     end
     return self:showTrending(rec)
+end
+
+-- Your year in reading (ledger_year.lua), on top of whichever page.
+function Ledger:showYear(year)
+    if self.year_page and UIManager:isWidgetShown(self.year_page) then UIManager:close(self.year_page) end
+    self.year_page = require("ledger_year"):new{ plugin = self, year = year }
+    UIManager:show(self.year_page, "flashui")
 end
 
 -- Every finished race: won or lost, and by how much.

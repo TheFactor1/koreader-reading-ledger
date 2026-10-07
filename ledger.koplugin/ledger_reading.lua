@@ -276,9 +276,12 @@ function Reading:build(squeeze)
     add(UI.rule(cw, s(2)))
     add(UI.vspace(s(8)))
     add(HorizontalGroup:new{ align = "center",
-        statBlock("Today", tostring(today_n) .. " p", bw),
-        statBlock("This week", tostring(week_n) .. " p", bw),
-        statBlock("Streak", streak_n .. (streak_n == 1 and " day" or " days"), bw),
+        -- (tap the counts for your year in reading)
+        UI.tappable(HorizontalGroup:new{ align = "center",
+            statBlock("Today", tostring(today_n) .. " p", bw),
+            statBlock("This week", tostring(week_n) .. " p", bw),
+            statBlock("Streak", streak_n .. (streak_n == 1 and " day" or " days"), bw),
+        }, function() plugin:showYear() end),
         -- (tap the record for every finished race)
         UI.tappable(statBlock("vs " .. plugin:petName(plugin:rival()), string.format("%d-%d", won, lost), cw - 3 * bw),
             function() plugin:showResults() end),

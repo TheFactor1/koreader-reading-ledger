@@ -69,6 +69,10 @@ Three pages, switched by a tab bar at the bottom (2026-10-04):
   they are. A line for today's race, today / this week / streak, new arrivals
   and what's on order, the yearly goal in fish.
   Several books on the go: swipe or tap < > to switch.
+- **Your year** (tap today / this week / streak): pages, books, days read and
+  hours; your best streak, biggest day, the race record and the quickest book;
+  pages month by month and the books you finished -- from the statistics, so
+  every device shows the same year. < > for earlier years.
 - **Library**: every book on the device as a paged grid of covers (tap to
   open, hold for its page), filters and sort, and behind **More**: Trending
   (Open Library this week), Want to read (your Hardcover shelf) and Requested

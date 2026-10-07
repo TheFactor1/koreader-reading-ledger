@@ -680,12 +680,13 @@ function Data.bookTurns(hash, db_in)
     if not db then return nil end
     -- (one checksum can have more than one book row -- a title edited on
     -- one device: all of them, so every device reads the same turns)
-    local title
-    eachRow(db, "SELECT title FROM book WHERE md5 = ? ORDER BY id LIMIT 1", { hash }, function(row)
+    local title, author
+    eachRow(db, "SELECT title, authors FROM book WHERE md5 = ? ORDER BY id LIMIT 1", { hash }, function(row)
         title = row[1] and tostring(row[1]) or nil
+        author = type(row[2]) == "string" and row[2] ~= "" and (row[2]:gsub("\n.*", "")) or nil
     end)
     local lo = sane()
-    local out = { rows = {}, total = 0, hash = hash, title = title }
+    local out = { rows = {}, total = 0, hash = hash, title = title, author = author }
     eachRow(db, "SELECT start_time, page, total_pages FROM page_stat_data WHERE id_book IN (SELECT id FROM book WHERE md5 = ?) AND start_time >= ? AND start_time < ? ORDER BY start_time, page, total_pages",
         { hash, lo, os.time() + 86400 }, function(row)
             local t, page, tot = tonumber(row[1]), tonumber(row[2]), tonumber(row[3])
@@ -698,6 +699,17 @@ function Data.bookTurns(hash, db_in)
     if #out.rows == 0 then out = nil end
     if not db_in then db:close() end
     return out
+end
+
+-- Seconds spent reading between two times (any device, the statistics).
+function Data.readingSeconds(t0, t1)
+    local db = openStats()
+    if not db then return 0 end
+    local n = 0
+    eachRow(db, "SELECT sum(duration) FROM page_stat_data WHERE start_time >= ? AND start_time < ?",
+        { t0, t1 }, function(row) n = tonumber(row[1]) or 0 end)
+    db:close()
+    return n
 end
 
 -- The books the statistics show you reaching the end of (any device):
