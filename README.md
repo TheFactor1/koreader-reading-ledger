@@ -85,8 +85,11 @@ Three pages, switched by a tab bar at the bottom (2026-10-04):
   every device shows the same year. < > for earlier years.
 - **Library**: every book on the device as a paged grid of covers (tap to
   open, hold for its page), filters and sort, and behind **More**: Trending
-  (Open Library this week), Want to read (your Hardcover shelf) and Requested
-  (asked for through Bookbridge, not here yet). Files for KOReader's own
+  (Open Library this week), Want to read (your Hardcover shelf), Requested
+  (asked for through Bookbridge, not here yet), and your **Hardcover vibes**:
+  Recommendations and Top Picks (Hardcover's Discover, tuned to you), vibes
+  you made, and vibes you liked from other readers -- each a shelf of books
+  you haven't read, one tap to get one through Bookbridge. Files for KOReader's own
   browser. (Status bars are still being chosen.)
 - **Settings**: your runner and your rival (and their names), what the rival
   has learned about your reading, Hardcover key, Readest and Bookbridge status,

@@ -108,8 +108,28 @@ function Library:shelfList(items, extra)
     return list
 end
 
+-- A Hardcover vibe's shelf: filter "vibe:<id>".
+local function vibeId(filter) return type(filter) == "string" and filter:match("^vibe:(%d+)$") end
+
+-- The shelf being shown (a fixed one, or a vibe), for labels.
+function Library:shelf()
+    if SHELF[self.filter] then return SHELF[self.filter] end
+    local id = vibeId(self.filter)
+    if id then return { id = self.filter, label = self.plugin:vibeLabel(self.plugin:vibe(id)) } end
+end
+
 function Library:refilter()
     local c = self.plugin and self.plugin.cache or {}
+    local vid = vibeId(self.filter)
+    if vid then
+        local v = self.plugin:vibe(vid)
+        local items = self.plugin:vibeBooks(vid, function() self:refreshCovers() end)
+        self.list = self:shelfList(items, { source = v and v.kind == "discover"
+            and string.format("From your Hardcover %s.", v.title)
+            or string.format("From the Hardcover vibe \"%s\".", self.plugin:vibeLabel(v)) })
+        self.vibe_loading = items == nil
+        return
+    end
     if self.filter == "trending" then
         self.list = self:shelfList(c.trending, { source = "Trending on Open Library this week." })
         return
@@ -156,7 +176,7 @@ end
 function Library:refreshCovers()
     if not UIManager:isWidgetShown(self) then return end
     -- (the trending shelf may just have arrived)
-    if SHELF[self.filter] then self:refilter() end
+    if self:shelf() then self:refilter() end
     self[1] = self:build()
     UIManager:setDirty(self, "ui")
 end
@@ -172,6 +192,13 @@ function Library:chooseShelf()
     for _, f in ipairs(SHELVES) do
         if f.id ~= "requested" or has_server then buttons[#buttons + 1] = { { text = (f.id == self.filter and "✓ " or "") .. f.label .. " -- " .. f.hint:lower(),
             align = "left", callback = function() UIManager:close(dlg); self:setFilter(f.id) end } } end
+    end
+    -- your Hardcover vibes: Discover's feeds, yours, the ones you liked
+    for _, v in ipairs((self.plugin.cache or {}).vibes or {}) do
+        local id = "vibe:" .. tostring(v.id)
+        local hint = v.kind == "discover" and "hardcover, for you" or v.kind == "mine" and "your hardcover vibe" or "a hardcover vibe you liked"
+        buttons[#buttons + 1] = { { text = (id == self.filter and "✓ " or "") .. self.plugin:vibeLabel(v) .. " -- " .. hint,
+            align = "left", callback = function() UIManager:close(dlg); self:setFilter(id) end } }
     end
     dlg = ButtonDialog:new{ title = "Shelves", buttons = buttons }
     UIManager:show(dlg)
@@ -349,7 +376,7 @@ function Library:build()
     local top = VerticalGroup:new{ align = "left" }
     local total = #(self.books or {})
     local count = self.filter == "all" and string.format("%d BOOKS", total)
-        or SHELF[self.filter] and SHELF[self.filter].label:upper()
+        or self:shelf() and self:shelf().label:upper()
         or string.format("%d OF %d", #self.list, total)
     -- KOReader's file browser (folders, file operations): a link up here
     local links = HorizontalGroup:new{ align = "center" }
@@ -367,11 +394,11 @@ function Library:build()
         chips[#chips + 1] = UI.button(f.label, function() self:setFilter(f.id) end, f.id ~= self.filter, 10)
     end
     -- the outside shelves: one button, named after the shelf when one's open
-    local shelf = SHELF[self.filter]
+    local shelf = self:shelf()
     chips[#chips + 1] = UI.hspace(s(6))
     chips[#chips + 1] = UI.button(shelf and shelf.label or "More +", function() self:chooseShelf() end, not shelf, 10)
     -- (the trending shelf is in Open Library's order: no sorting there)
-    local sort_btn = not SHELF[self.filter]
+    local sort_btn = not self:shelf()
         and UI.button("Sort: " .. SORT_LABEL[self.sort], function() self:nextSort() end, true, 10)
         or UI.hspace(0)
     top[#top + 1] = UI.spread(cw, chips, sort_btn)
@@ -449,6 +476,10 @@ function Library:build()
             want = self.plugin:hardcoverToken() and "Nothing on your Want to Read shelf yet, or it hasn't loaded: it comes with the next refresh."
                 or "Add your Hardcover key in Settings to see your Want to Read shelf here.",
             requested = "Nothing waiting. Books you request through Bookbridge show up here until they arrive." }
+        if vibeId(self.filter) then
+            empty[self.filter] = self.vibe_loading and "Asking Hardcover for this vibe's books..."
+                or "Nothing new in this vibe -- you've read or shelved everything it found."
+        end
         grid[#grid + 1] = UI.para(empty[self.filter] or "", "body", 13, cw, UI.INK2)
     end
 

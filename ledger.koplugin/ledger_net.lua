@@ -385,6 +385,97 @@ function Net.hardcoverRead(token, limit)
     return out
 end
 
+-- ---------------------------------------------------------------- vibes
+-- Hardcover's vibes: recommendation feeds it keeps fresh (once a day).
+-- Yours -- "Recommendations" and "Top Picks" behind its Discover page, and
+-- any you've made -- and the ones you've liked from other readers.
+-- -> { { id, title, kind = "discover"|"mine"|"liked", by } } (needs the
+-- key's read:vibes scope; nil, err without it)
+function Net.hardcoverVibes(token)
+    local me, err = Net.hardcover(token, "query LedgerMe { me { id } }")
+    local my_id = me and type(me.me) == "table" and type(me.me[1]) == "table" and num(me.me[1].id)
+    if not my_id then return nil, err or "no user" end
+    local data, err2 = Net.hardcover(token, [[
+        query LedgerVibes($me: Int!) {
+            vibes(where: {user_id: {_eq: $me}, vibe_type: {_in: [0, 1, 3]}}, order_by: {vibe_type: desc}) { id title vibe_type }
+            likes(where: {user_id: {_eq: $me}, likeable_type: {_eq: "Vibe"}}, order_by: {created_at: desc}, limit: 20) {
+                vibe { id title user { username } }
+            }
+        }
+    ]], { me = my_id })
+    if not data then return nil, err2 end
+    local out = {}
+    -- (Discover's two first: Recommendations, then Top Picks)
+    local order = { [1] = 1, [3] = 2, [0] = 3 }
+    local mine = {}
+    for _, v in ipairs(type(data.vibes) == "table" and data.vibes or {}) do
+        if type(v) == "table" and num(v.id) and str(v.title) then
+            mine[#mine + 1] = { id = num(v.id), title = str(v.title), kind = (num(v.vibe_type) == 0) and "mine" or "discover",
+                rank = order[num(v.vibe_type) or 0] or 9 }
+        end
+    end
+    table.sort(mine, function(a, b) return a.rank < b.rank end)
+    for _, v in ipairs(mine) do v.rank = nil; out[#out + 1] = v end
+    for _, l in ipairs(type(data.likes) == "table" and data.likes or {}) do
+        local v = type(l) == "table" and type(l.vibe) == "table" and l.vibe
+        if v and num(v.id) and str(v.title) then
+            out[#out + 1] = { id = num(v.id), title = str(v.title), kind = "liked",
+                by = type(v.user) == "table" and str(v.user.username) or nil }
+        end
+    end
+    return out
+end
+
+-- A vibe's books, best first: its ranked pool, without the ones you've
+-- already read or set aside on Hardcover. -> { { id, title, author, year,
+-- cover, status_id } } (status 1: on your Want to Read)
+function Net.hardcoverVibeBooks(token, vibe_id, limit, covers_dir)
+    limit = limit or 24
+    local data, err = Net.hardcover(token, "query LedgerVibe($id: Int!) { vibes_by_pk(id: $id) { cached_book_ids } }", { id = vibe_id })
+    if not data then return nil, err end
+    local v = type(data.vibes_by_pk) == "table" and data.vibes_by_pk
+    local ids = {}
+    for _, id in ipairs(v and type(v.cached_book_ids) == "table" and v.cached_book_ids or {}) do
+        if num(id) and #ids < limit * 2 then ids[#ids + 1] = num(id) end
+    end
+    if #ids == 0 then return {} end
+    local b, err2 = Net.hardcover(token, [[
+        query LedgerVibeBooks($ids: [Int!]) {
+            books(where: {id: {_in: $ids}}) { id title release_year cached_contributors cached_image }
+            me { user_books(where: {book_id: {_in: $ids}}) { book_id status_id } }
+        }
+    ]], { ids = ids })
+    if not b then return nil, err2 end
+    local by_id, status = {}, {}
+    for _, bk in ipairs(type(b.books) == "table" and b.books or {}) do
+        if type(bk) == "table" and num(bk.id) then by_id[num(bk.id)] = bk end
+    end
+    local me = type(b.me) == "table" and b.me[1]
+    for _, ub in ipairs(type(me) == "table" and type(me.user_books) == "table" and me.user_books or {}) do
+        if type(ub) == "table" and num(ub.book_id) then status[num(ub.book_id)] = num(ub.status_id) end
+    end
+    local out = {}
+    for _, id in ipairs(ids) do     -- (the vibe's order)
+        local bk = by_id[id]
+        local st = status[id]
+        -- (read, reading, paused, not finished, ignored: not a discovery)
+        if bk and str(bk.title) and (not st or st == 1) then
+            local author
+            for _, c in ipairs(type(bk.cached_contributors) == "table" and bk.cached_contributors or {}) do
+                if type(c) == "table" and type(c.author) == "table" and (type(c.contribution) ~= "string" or c.contribution == "Author") then
+                    author = str(c.author.name); if author then break end
+                end
+            end
+            local item = { id = id, title = str(bk.title), author = author, year = num(bk.release_year), status_id = st }
+            local img = type(bk.cached_image) == "table" and str(bk.cached_image.url)
+            if img and covers_dir then item.cover = Net.fetchFile(img, string.format("%s/hc-%d.jpg", covers_dir, id)) end
+            out[#out + 1] = item
+            if #out >= limit then break end
+        end
+    end
+    return out
+end
+
 -- ---------------------------------------------------------------- friends
 -- People you follow on Hardcover: { { id, username, name } }.
 function Net.hardcoverFollows(token)

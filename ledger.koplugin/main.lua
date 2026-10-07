@@ -1073,7 +1073,7 @@ function Ledger:refreshRemote(force)
     if not NetworkMgr:isOnline() then return end
     local c = self.cache or {}
     -- (an older Read shelf, without series: fetched again at once)
-    local stale_read = self:hardcoverToken() and c.hc_read_v ~= 2
+    local stale_read = self:hardcoverToken() and (c.hc_read_v ~= 2 or not c.vibes)
     if not force and not stale_read and c.fetched_at and os.time() - c.fetched_at < REFRESH_EVERY then return end
     if self._refreshing then return end
     self._refreshing = true
@@ -1086,6 +1086,7 @@ function Ledger:refreshRemote(force)
     local week_start = self:weekStart()
     -- (v2: with each book's series, to know a record named "Series - 02 ...")
     local fetch_read = force or not c.hc_read or c.hc_read_v ~= 2 or os.time() - (c.hc_read_at or 0) >= 86400
+    local have_vibes = c.vibes ~= nil
     Bg.run(function()
         local out = {}
         if token then
@@ -1094,6 +1095,9 @@ function Ledger:refreshRemote(force)
             -- the Library's Want to Read shelf
             if front then out.want = Net.hardcoverWant(token, 12, covers_dir) end
         end
+        -- your vibes (once a day): Discover's feeds and the ones you liked
+        -- (a key without read:vibes: an empty list, asked again tomorrow)
+        if token and (fetch_read or not have_vibes) then out.vibes = Net.hardcoverVibes(token) or {} end
         -- your Read shelf (once a day): finished books known to Hardcover
         if token and fetch_read then out.hc_read = Net.hardcoverRead(token, 300) end
         -- friends' reading (Hardcover): what they're reading, pages this week
@@ -1121,6 +1125,8 @@ function Ledger:refreshRemote(force)
         end
         if out.friends then cache.friends, cache.friends_week = out.friends, week_start end
         if out.hc_read then cache.hc_read, cache.hc_read_at, cache.hc_read_v = out.hc_read, os.time(), 2 end
+        if out.vibes then cache.vibes = out.vibes end
+        if token == nil then cache.vibes, cache.vibe_books = nil, nil end
         if token == nil then cache.hc_read = nil end
         self._finished = nil
         cache.fetched_at = os.time()
@@ -1404,6 +1410,45 @@ function Ledger:withNet(task, on_done)
         UIManager:close(wait)
         on_done(ok and r or nil)
     end, 30)
+end
+
+-- ---------------------------------------------------------------- vibes
+-- Hardcover's vibes as Library shelves (ledger_library.lua): the list comes
+-- with the daily refresh; a vibe's books when its shelf opens, kept a day.
+function Ledger:vibe(id)
+    for _, v in ipairs((self.cache or {}).vibes or {}) do if tostring(v.id) == tostring(id) then return v end end
+end
+
+function Ledger:vibeLabel(v)
+    if not v then return "Vibe" end
+    if v.kind == "liked" and v.by then return string.format("%s (by %s)", v.title, v.by) end
+    return v.title
+end
+
+-- -> items (or nil while they're fetched; on_change when they land)
+function Ledger:vibeBooks(id, on_change)
+    local c = self.cache or {}
+    c.vibe_books = c.vibe_books or {}
+    local have = c.vibe_books[tostring(id)]
+    local token = self:hardcoverToken()
+    if token and (not have or os.time() - (have.at or 0) > 86400) and not (self._vibe_busy or {})[tostring(id)]
+            and NetworkMgr:isOnline() then
+        self._vibe_busy = self._vibe_busy or {}
+        self._vibe_busy[tostring(id)] = true
+        local dir = Data.coversDir()
+        Bg.run(function() return Net.hardcoverVibeBooks(token, tonumber(id), 24, dir) end, function(ok, items)
+            self._vibe_busy[tostring(id)] = nil
+            local cc = self.cache or {}
+            cc.vibe_books = cc.vibe_books or {}
+            -- (no answer: kept as it was, asked again in an hour)
+            if ok and type(items) == "table" then cc.vibe_books[tostring(id)] = { at = os.time(), items = items }
+            elseif have then have.at = os.time() - 86400 + 3600 end
+            self.cache = cc
+            Data.saveCache(cc)
+            if on_change then on_change() end
+        end, 90)
+    end
+    return have and have.items
 end
 
 -- ---------------------------------------------------------------- finished books
