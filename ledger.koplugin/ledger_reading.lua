@@ -86,6 +86,7 @@ function Reading:onNextBook() return self:switchTo(self.index + 1) end
 function Reading:onPrevBook() return self:switchTo(self.index - 1) end
 
 function Reading:update(data, cache)
+    self.stats, self.stats_for = nil, nil   -- (a sync may have brought new page turns)
     if data then self.data = data; self:init() return self:repaint() end
     if cache then self.cache = cache end
     self[1] = self:build()

@@ -89,6 +89,11 @@ function Ledger:init()
         end
     end
     self.settings = shared_settings
+    -- (v0.1's stored races; the race is rebuilt from the statistics now)
+    if shared_settings:readSetting("races") or shared_settings:readSetting("rival_form") then
+        shared_settings:delSetting("races")
+        shared_settings:delSetting("rival_form")
+    end
     Dispatcher:registerAction("ledger_show", {
         category = "none", event = "ShowLedger", title = _("Reading Ledger"), general = true,
     })
@@ -691,6 +696,8 @@ function Ledger:chooseAnimal(which)
             UIManager:close(dialog)
             if a.id == other then self.settings:saveSetting(which == "runner" and "rival" or "runner", current) end
             self.settings:saveSetting(which, a.id)
+            -- (the race is replayed against the new rival)
+            self.race_model, self._results = nil, nil
             self.settings:flush()
             self:redraw()
         end } }

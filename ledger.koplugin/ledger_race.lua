@@ -88,6 +88,9 @@ function Race.model(habits, now)
     local wd_sum, wd_n = {}, {}
     for w = 1, 7 do wd_sum[w], wd_n[w] = 0, 0 end
     local total, n, recent, recent_n, reading_days = 0, 0, 0, 0, 0
+    -- when the reading by hour is known day by day, the hours are learned from
+    -- the same eight weeks (so a day is only decided by what came before it)
+    local by_hour, turns = habits and habits.hours_by_day and {} or nil, 0
     if habits and habits.first then
         -- every calendar day from the first one seen (at most 8 weeks) to yesterday
         local t = math.max(timeOf(habits.first), noon(now) - 56 * 86400)
@@ -99,6 +102,8 @@ function Race.model(habits, now)
             total, n = total + pages, n + 1
             if pages > 0 then reading_days = reading_days + 1 end
             if t >= noon(now) - 14 * 86400 then recent, recent_n = recent + pages, recent_n + 1 end
+            local hd = by_hour and habits.hours_by_day[d]
+            if hd then for h, c in pairs(hd) do by_hour[h] = (by_hour[h] or 0) + c; turns = turns + c end end
             t = t + 86400
         end
     end
@@ -118,7 +123,15 @@ function Race.model(habits, now)
         for w = 1, 7 do m.weekday[w] = Race.DEFAULT_PACE end
     end
     -- hours: yours, or evenly from 7 am to midnight
-    local hours = habits and habits.hours
+    local hours
+    if by_hour then
+        if turns > 0 then
+            hours = {}
+            for h = 0, 23 do hours[h] = (by_hour[h] or 0) / turns end
+        end
+    else
+        hours = habits and habits.hours
+    end
     if not hours then
         hours = {}
         for h = 0, 23 do hours[h] = h >= 7 and 1 / 17 or 0 end
@@ -179,7 +192,7 @@ function Race.timeline(habits, rival, now)
     local key = tostring(habits and habits.fp) .. "|" .. tostring(rival) .. "|" .. today
     if timeline_cache.key == key then return timeline_cache.T end
     local a = Race.animal(rival)
-    local T = { rival = rival, today = today, habits = habits, factor_on = {}, results = {}, models = {} }
+    local T = { rival = rival, today = today, now = now, habits = habits, factor_on = {}, results = {}, models = {} }
     function T.model(date)
         local m = T.models[date]
         if not m then m = Race.model(habits, timeOf(date)); T.models[date] = m end
@@ -240,8 +253,11 @@ local function band(gap_days)
 end
 
 -- A book's race up to time t, from its page turns (turns: Data.bookTurns).
--- -> { start, frac (the rival at the start of t's day), you (you then) }
-function Race.bookRace(turns, T, total, t)
+-- Everything is as of t: the book's length is the longest any device had
+-- counted by then (a device added later doesn't rewrite old races).
+-- -> { start, frac (the rival at the start of t's day), you (you then),
+--      total (pages, as of t) }
+function Race.bookRace(turns, T, total_hint, t)
     local rows = turns.rows
     local last = 0
     for i = 1, #rows do if rows[i].t <= t then last = i end end
@@ -249,6 +265,9 @@ function Race.bookRace(turns, T, total, t)
     -- the race starts at the first turn, or after the last long break before t
     local seg = 1
     for i = 2, last do if rows[i].t - rows[i - 1].t >= BREAK then seg = i end end
+    local total = 0
+    for i = 1, last do if (rows[i].tot or 0) > total then total = rows[i].tot end end
+    if total <= 0 then total = total_hint or Race.DEFAULT_PAGES end
     local start, start_frac = rows[seg].t, rows[seg].first_frac
     -- where you were at the end of each day (the furthest page so far)
     local you_end, best = {}, start_frac
@@ -268,7 +287,30 @@ function Race.bookRace(turns, T, total, t)
         frac = math.min(1, frac + dayTarget(m, a, T.factor_on[d] or T.factor, d) * mult * part / total)
         d = nextDate(d)
     end
-    return { start = start, frac = frac, you = you_end[upto] or you }
+    return { start = start, frac = frac, you = you_end[upto] or you, total = total }
+end
+
+-- When you finished a book, from its page turns: the first turn at the
+-- end (98%) after reading through most of it in one go (a jump to the
+-- endnotes isn't finishing); or, for a book whose back matter you skipped,
+-- the last turn of a read-through that reached 90% and then stopped for
+-- good (two weeks). -> time | nil
+function Race.finishedAt(turns, now)
+    local rows = turns.rows
+    local seen, n_seen, seg_tot = {}, 0, 0
+    local function reset() seen, n_seen, seg_tot = {}, 0, 0 end
+    for i = 1, #rows do
+        local r = rows[i]
+        if i > 1 and r.t - rows[i - 1].t >= BREAK then reset() end
+        local key = (r.page or math.floor(r.frac * 1000)) .. "/" .. (r.tot or 0)
+        if not seen[key] then seen[key] = true; n_seen = n_seen + 1 end
+        if (r.tot or 0) > seg_tot then seg_tot = r.tot end
+        local covered = seg_tot > 0 and n_seen / seg_tot or 0
+        if r.frac >= FINISH and covered >= 0.5 then return r.t end
+        local is_last = i == #rows or rows[i + 1].t - r.t >= BREAK
+        if is_last and r.frac >= 0.9 and covered >= 0.6 and (now or os.time()) - r.t >= BREAK then return r.t end
+    end
+    return nil
 end
 
 -- The rival's place at time t (rival pages, the day's target, mood).
@@ -299,20 +341,25 @@ function Race.state(rec, stats, _store, _you, rival, T, now, peek)
     if T and T.timeline then T = T.timeline end
     T = T or Race.timeline(nil, rival, now)
     local turns = stats.turns
-    local total = (turns and turns.total > 0 and turns.total)
-        or ((rec.pages and rec.pages > 0) and rec.pages) or Race.DEFAULT_PAGES
+    -- the race runs in the statistics' pages (the same on every device) and
+    -- is shown in this device's own (what its page footer says)
+    local own = (rec.pages and rec.pages > 0) and rec.pages or nil
     local you_pct = math.max(rec.pct or 0, rec.readest and rec.readest.pct or 0)
-    local a = Race.animal(rival or T.rival)
-    local br = not peek and turns and Race.bookRace(turns, T, total, now)
+    local a = Race.animal(T.rival)   -- (the timeline's rival: one animal throughout)
+    local br = not peek and turns and Race.bookRace(turns, T, own, now)
     if br then you_pct = math.max(you_pct, br.you) end
-    local you_pages = math.floor(you_pct * total + 0.5)
+    local race_total = (br and br.total) or own or Race.DEFAULT_PAGES
     br = br or { start = now, frac = you_pct }   -- not started: level with you
-    local rival_pages, target, mood, m, factor = rivalAt(br, T, a, total, you_pages, now)
+    local rival_race, target, mood, m, factor = rivalAt(br, T, a, race_total, math.floor(you_pct * race_total + 0.5), now)
+    local total = own or race_total
+    local rival_pct = rival_race / race_total
+    local you_pages = math.floor(you_pct * total + 0.5)
+    local rival_pages = math.min(total, math.floor(rival_pct * total + 0.5))
     return {
         total = total,
-        pages_known = (turns and turns.total > 0) or (rec.pages and rec.pages > 0) or false,
+        pages_known = own ~= nil or (turns and turns.total > 0) or false,
         you_pages = you_pages, you_pct = you_pct,
-        rival_pages = rival_pages, rival_pct = rival_pages / total,
+        rival_pages = rival_pages, rival_pct = rival_pct,
         rate = math.floor(m.overall * a.mult * factor * (a.nap and 2 / 3 or 1) + 0.5),
         napping = target == 0,
         -- a dead heat goes to you: you turned the last page
@@ -329,14 +376,11 @@ end
 -- -> { won, by, rival, at, title } (by: pages ahead, yours or the rival's) | nil
 function Race.result(turns, T)
     if not turns or not T then return nil end
-    local at
-    for _, r in ipairs(turns.rows) do
-        if r.frac >= FINISH then at = r.t; break end
-    end
+    local at = Race.finishedAt(turns, T.now)
     if not at then return nil end
-    local total = turns.total > 0 and turns.total or Race.DEFAULT_PAGES
-    local br = Race.bookRace(turns, T, total, at)
+    local br = Race.bookRace(turns, T, nil, at)
     if not br then return nil end
+    local total = br.total
     local rival_pages = rivalAt(br, T, Race.animal(T.rival), total, total, at)
     local won = rival_pages < total
     return { won = won, by = won and (total - rival_pages) or nil, rival = T.rival, at = at, title = turns.title, hash = turns.hash }

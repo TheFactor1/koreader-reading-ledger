@@ -106,9 +106,11 @@ function R.refresh(ui, on_change, bb)
     -- down, the library): ask it, and redraw when its pulls land
     if bb and bb.syncNow then
         if on_change then listeners = { on_change } end
-        local ok, err = pcall(function() hook(); bb:syncNow("ledger") end)
-        if not ok then logger.warn("ledger: sync failed:", err) end
-        return
+        local ok, synced = pcall(function() hook(); return bb:syncNow("ledger") end)
+        if not ok then logger.warn("ledger: sync failed:", synced) end
+        if ok and synced then return end
+        -- (Bookbridge didn't sync -- Readest's auto sync off, or it ran a
+        -- moment ago: fall through to the hourly pull)
     end
     if os.time() - last_pull < 3600 then return end
     last_pull = os.time()

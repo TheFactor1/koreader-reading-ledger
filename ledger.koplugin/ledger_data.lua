@@ -619,40 +619,57 @@ local function eachRow(db, sql, args, fn)
     end)
 end
 
--- What the statistics hold, in one line: changes whenever page turns are
--- added here or arrive from another device. (rows, newest turn)
+-- The race reads finished days only (today never decides anything), and
+-- page turns dated before 2010 or after tomorrow -- a Kindle whose clock
+-- reset after a flat battery writes 1970 -- are left out.
+local function sane()
+    local t = os.date("*t")
+    local midnight = os.time{ year = t.year, month = t.month, day = t.day, hour = 0 }
+    return 1262304000, midnight   -- 2010-01-01 .. local midnight
+end
+
+-- What the statistics hold up to last midnight, in one line: changes
+-- whenever page turns are added or arrive from another device.
 function Data.statsFingerprint()
     local db = openStats()
     if not db then return nil end
+    local lo, hi = sane()
     local fp
-    eachRow(db, "SELECT count(*), max(start_time) FROM page_stat_data", nil, function(row)
-        fp = tostring(tonumber(row[1]) or 0) .. ":" .. tostring(tonumber(row[2]) or 0)
-    end)
+    eachRow(db, "SELECT count(*), max(start_time), sum(duration), sum(total_pages) FROM page_stat_data WHERE start_time >= ? AND start_time < ?",
+        { lo, hi }, function(row)
+            fp = table.concat({ tonumber(row[1]) or 0, tonumber(row[2]) or 0, tonumber(row[3]) or 0, tonumber(row[4]) or 0 }, ":")
+        end)
     db:close()
-    return fp
+    return fp and (fp .. "@" .. hi) or nil
 end
 
 local all_cache = nil   -- { fp, out }
--- Every day in the statistics: { days = { [date] = distinct pages },
--- hours = { [0..23] = share of page turns }, first = date, fp }.
+-- Every finished day in the statistics: { days = { [date] = distinct pages },
+-- hours_by_day = { [date] = { [0..23] = page turns } }, hours (all of them,
+-- as shares), first = date, fp }.
 function Data.allHabits()
     local fp = Data.statsFingerprint()
     if not fp then return nil end
     if all_cache and all_cache.fp == fp then return all_cache.out end
     local db = openStats()
     if not db then return nil end
-    local out = { days = {}, hours = {}, fp = fp }
-    eachRow(db, "SELECT date(start_time, 'unixepoch', 'localtime'), count(DISTINCT id_book || ':' || page) FROM page_stat_data GROUP BY 1",
-        nil, function(row)
+    local lo, hi = sane()
+    local out = { days = {}, hours = {}, hours_by_day = {}, fp = fp }
+    eachRow(db, "SELECT date(start_time, 'unixepoch', 'localtime'), count(DISTINCT id_book || ':' || page) FROM page_stat_data WHERE start_time >= ? AND start_time < ? GROUP BY 1",
+        { lo, hi }, function(row)
             local d = tostring(row[1])
             out.days[d] = tonumber(row[2]) or 0
             if not out.first or d < out.first then out.first = d end
         end)
     local by_hour, turns = {}, 0
-    eachRow(db, "SELECT CAST(strftime('%H', start_time, 'unixepoch', 'localtime') AS INTEGER), count(*) FROM page_stat_data GROUP BY 1",
-        nil, function(row)
-            local h, n = tonumber(row[1]), tonumber(row[2]) or 0
-            if h then by_hour[h] = n; turns = turns + n end
+    eachRow(db, "SELECT date(start_time, 'unixepoch', 'localtime'), CAST(strftime('%H', start_time, 'unixepoch', 'localtime') AS INTEGER), count(*) FROM page_stat_data WHERE start_time >= ? AND start_time < ? GROUP BY 1, 2",
+        { lo, hi }, function(row)
+            local d, h, n = tostring(row[1]), tonumber(row[2]), tonumber(row[3]) or 0
+            if h then
+                out.hours_by_day[d] = out.hours_by_day[d] or {}
+                out.hours_by_day[d][h] = n
+                by_hour[h] = (by_hour[h] or 0) + n; turns = turns + n
+            end
         end)
     db:close()
     if turns == 0 then out = nil
@@ -670,23 +687,24 @@ function Data.bookTurns(hash, db_in)
     if not hash then return nil end
     local db = db_in or openStats()
     if not db then return nil end
-    local id, title
-    eachRow(db, "SELECT id, title FROM book WHERE md5 = ?", { hash }, function(row)
-        id = tonumber(row[1]); title = row[2] and tostring(row[2]) or nil
+    -- (one checksum can have more than one book row -- a title edited on
+    -- one device: all of them, so every device reads the same turns)
+    local title
+    eachRow(db, "SELECT title FROM book WHERE md5 = ? ORDER BY id LIMIT 1", { hash }, function(row)
+        title = row[1] and tostring(row[1]) or nil
     end)
-    local out
-    if id then
-        out = { rows = {}, total = 0, hash = hash, title = title }
-        eachRow(db, "SELECT start_time, page, total_pages FROM page_stat_data WHERE id_book = ? ORDER BY start_time, page",
-            { id }, function(row)
-                local t, page, tot = tonumber(row[1]), tonumber(row[2]), tonumber(row[3])
-                if t and page and tot and tot > 0 then
-                    out.rows[#out.rows + 1] = { t = t, frac = math.min(1, page / tot), first_frac = math.max(0, (page - 1) / tot) }
-                    if tot > out.total then out.total = tot end
-                end
-            end)
-        if #out.rows == 0 then out = nil end
-    end
+    local lo = sane()
+    local out = { rows = {}, total = 0, hash = hash, title = title }
+    eachRow(db, "SELECT start_time, page, total_pages FROM page_stat_data WHERE id_book IN (SELECT id FROM book WHERE md5 = ?) AND start_time >= ? AND start_time < ? ORDER BY start_time, page, total_pages",
+        { hash, lo, os.time() + 86400 }, function(row)
+            local t, page, tot = tonumber(row[1]), tonumber(row[2]), tonumber(row[3])
+            if t and page and tot and tot > 0 then
+                out.rows[#out.rows + 1] = { t = t, page = page, tot = tot,
+                    frac = math.min(1, page / tot), first_frac = math.max(0, (page - 1) / tot) }
+                if tot > out.total then out.total = tot end
+            end
+        end)
+    if #out.rows == 0 then out = nil end
     if not db_in then db:close() end
     return out
 end
@@ -698,7 +716,7 @@ function Data.finishedTurns()
     local db = openStats()
     if not db then return {} end
     local hashes = {}
-    eachRow(db, "SELECT b.md5 FROM page_stat_data p JOIN book b ON b.id = p.id_book WHERE p.total_pages > 0 GROUP BY p.id_book HAVING max(p.page * 1.0 / p.total_pages) >= 0.98",
+    eachRow(db, "SELECT b.md5 FROM page_stat_data p JOIN book b ON b.id = p.id_book WHERE p.total_pages > 0 GROUP BY p.id_book HAVING max(p.page * 1.0 / p.total_pages) >= 0.9",
         nil, function(row) if row[1] then hashes[#hashes + 1] = tostring(row[1]) end end)
     local out = {}
     for _, h in ipairs(hashes) do out[h] = Data.bookTurns(h, db) end

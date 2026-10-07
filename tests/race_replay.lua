@@ -25,8 +25,10 @@ local function dateOf(t) return os.date("%Y-%m-%d", t) end
 -- slump after a year, skipped days; 300-page books back to back, read on
 -- "device A" (300 pages) and "device B" (its own page count, 320) on
 -- alternate days. Returns the statistics as the replay sees them.
+local hours_by_day
 local function reading(ndays)
     seed = 12345
+    hours_by_day = {}
     local days, books = {}, {}
     local book, at = 1, 0
     for i = 0, ndays - 1 do
@@ -43,9 +45,12 @@ local function reading(ndays)
             local total = (i % 2 == 0) and 300 or 320
             for k = 1, n do
                 at = math.min(1, at + 1 / 300)
-                b.rows[#b.rows + 1] = { t = t + 9 * 3600 + k * 60, frac = at, first_frac = math.max(0, at - 1 / total) }
+                local page = math.max(1, math.floor(at * total + 0.5))
+                b.rows[#b.rows + 1] = { t = t + 9 * 3600 + k * 60, frac = page / total, first_frac = math.max(0, (page - 1) / total), page = page, tot = total }
                 if total > b.total then b.total = total end
             end
+            hours_by_day = hours_by_day or {}
+            hours_by_day[dateOf(t)] = { [21] = n }
             if at >= 1 then book, at = book + 1, 0 end
         end
     end
@@ -61,6 +66,8 @@ local function habitsOf(days, upto, fp)
         end
     end
     for x = 0, 23 do h.hours[x] = (x >= 21 and x <= 23) and 1 / 3 or 0 end
+    h.hours_by_day = {}
+    for d, hd in pairs(hours_by_day or {}) do if d < upto then h.hours_by_day[d] = hd end end
     return h
 end
 
@@ -116,9 +123,9 @@ current = current or books[#books]
 local rec = { pct = 0.1, pages = 250, hash = current.hash }    -- this device's own page count differs
 local sA = Race.state(rec, { turns = current, today = 0 }, nil, "cat", "dog", A, now)
 local sB = Race.state({ pct = 0.1, pages = 280, hash = current.hash }, { turns = current, today = 0 }, nil, "cat", "dog", B, now)
-ck(sA.rival_pages == sB.rival_pages and sA.you_pages == sB.you_pages and sA.total == sB.total,
+ck(math.abs(sA.rival_pct - sB.rival_pct) < 1e-9 and math.abs(sA.you_pct - sB.you_pct) < 1e-9,
     string.format("a book's race: the same on both devices (rival p.%d, you p.%d of %d)", sA.rival_pages, sA.you_pages, sA.total))
-ck(sA.total == current.total, "the race uses the book's length from the statistics, not this device's page count")
+ck(math.abs(sA.rival_pct - sB.rival_pct) < 1e-9, "the rival is at the same place on both devices (each shows its own page count)")
 
 -- 6. finished books: the same results everywhere
 local finished = {}
@@ -159,6 +166,51 @@ for i = 600, 728 do
     if not R.results[dateOf(t0 + i * DAY)] then naps = naps + 1 end
 end
 ck(math.abs(naps / seen - 1 / 3) < 0.05, string.format("the rabbit naps on a third of days (%d of %d)", naps, seen))
+
+-- 11. a finished book's result doesn't change after the fact
+do
+    local _, _, before = Race.tally(A, finished)
+    -- later reading at other hours (the habits shift) ...
+    local more = {}; for d, n in pairs(days) do more[d] = n end
+    local hb = {}; for d, hd in pairs(hours_by_day) do hb[d] = hd end
+    for i = 730, 790 do more[dateOf(t0 + i * DAY)] = 30; hours_by_day[dateOf(t0 + i * DAY)] = { [7] = 30 } end
+    local later_now = t0 + 790 * DAY + 20 * 3600
+    local L = Race.timeline(habitsOf(more, dateOf(later_now), "later"), "dog", later_now)
+    local _, _, after = Race.tally(L, finished)
+    hours_by_day = hb
+    local changed = 0
+    local by = {}; for _, r in ipairs(before) do by[r.hash] = r end
+    for _, r in ipairs(after) do local o = by[r.hash]; if not o or o.won ~= r.won or o.by ~= r.by then changed = changed + 1 end end
+    ck(changed == 0 and #after == #before, "two months more reading, at other hours: no finished book's result changes (" .. changed .. " did)")
+    -- ... and another device with a different page count reading it later
+    local b = books[1]
+    local r1 = Race.result(b, A)
+    local copy = { rows = {}, total = b.total, hash = b.hash, title = b.title }
+    for _, row in ipairs(b.rows) do copy.rows[#copy.rows + 1] = row end
+    copy.rows[#copy.rows + 1] = { t = now - DAY, frac = 0.5, first_frac = 0.5, page = 200, tot = 400 }
+    copy.total = 400
+    local r2 = Race.result(copy, A)
+    ck(r1 and r2 and r1.won == r2.won and r1.by == r2.by, "a later device counting 400 pages doesn't rewrite an old result")
+end
+
+-- 12. jumping to the endnotes isn't finishing; skipping back matter is
+do
+    local jump = { rows = {}, total = 300, hash = "jump", title = "Jump" }
+    local tj = t0 + 600 * DAY
+    for k = 1, 20 do jump.rows[#jump.rows + 1] = { t = tj + k * 60, frac = k / 300, first_frac = (k - 1) / 300, page = k, tot = 300 } end
+    jump.rows[#jump.rows + 1] = { t = tj + DAY, frac = 295 / 300, first_frac = 294 / 300, page = 295, tot = 300 }
+    ck(Race.result(jump, A) == nil, "read 20 pages, then jumped to the endnotes: not finished")
+    local skip = { rows = {}, total = 300, hash = "skip", title = "Skip" }
+    for k = 1, 280 do skip.rows[#skip.rows + 1] = { t = tj + k * 300, frac = k / 300, first_frac = (k - 1) / 300, page = k, tot = 300 } end
+    ck(Race.result(skip, A) ~= nil, "read 93% and left the back matter (weeks ago): finished")
+end
+
+-- 13. this device's own page numbers on screen; the race itself is the same
+do
+    local s1 = Race.state({ pct = 0.5, pages = 250, hash = current.hash }, { turns = current }, nil, "cat", "dog", A, now)
+    local s2 = Race.state({ pct = 0.5, pages = 280, hash = current.hash }, { turns = current }, nil, "cat", "dog", A, now)
+    ck(s1.total == 250 and s2.total == 280 and math.abs(s1.rival_pct - s2.rival_pct) < 1e-9, "shown in each device's own pages, the rival at the same place on both")
+end
 
 print(string.format("%d passed, %d failed", pass, fail))
 os.exit(fail == 0 and 0 or 1)
