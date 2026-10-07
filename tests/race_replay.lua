@@ -241,5 +241,28 @@ do
     ck(math.abs(st2.you_pct - 40 / 155) < 0.01, string.format("reading on to p. 40 the same day: there (%.0f%%)", st2.you_pct * 100))
 end
 
+
+-- 10. put down, the rival slows to a quarter of its pace; opened, full pace
+do
+    local at = os.time{ year = 2026, month = 10, day = 7, hour = 20 }
+    local day0 = at - 12 * DAY - 8 * 3600
+    local hd = {}
+    for i = 1, 60 do hd[os.date("%Y-%m-%d", at - i * DAY)] = 20 end
+    local T = Race.timeline(habitsOf(hd, os.date("%Y-%m-%d", at), "away"), "dog", at)
+    local function book(open_daily)
+        local b = { rows = {}, hash = open_daily and "open" or "away" }
+        for k = 1, 10 do b.rows[#b.rows + 1] = { t = day0 + k * 60, page = k, tot = 300, frac = k / 300, first_frac = (k - 1) / 300 } end
+        if open_daily then   -- (opened every day, a page each time)
+            for d = 1, 11 do local p = 10 + d; b.rows[#b.rows + 1] = { t = day0 + d * DAY, page = p, tot = 300, frac = p / 300, first_frac = (p - 1) / 300 } end
+        end
+        return Race.state({ pct = 10 / 300, pages = 300, hash = b.hash }, { turns = b, today = 0 }, nil, "cat", "dog", T, at)
+    end
+    local away, open = book(false), book(true)
+    local away_run, open_run = away.rival_pages - 10, open.rival_pages - 10
+    ck(away_run > 0 and away_run < 0.45 * open_run,
+        string.format("twelve days away: the rival ran %d pages; opening it daily: %d", away_run, open_run))
+    ck(not away.rival_done, "put down for twelve days: the race is still on")
+end
+
 print(string.format("%d passed, %d failed", pass, fail))
 os.exit(fail == 0 and 0 or 1)

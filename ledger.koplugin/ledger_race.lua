@@ -195,6 +195,11 @@ every device alike.
 
 local BREAK = 14 * 86400        -- a pause this long in a book restarts its race
 local FINISH = 0.98             -- where in the book counts as reaching the end
+-- On a day you don't open the book, the rival in it goes at this share of
+-- its pace: putting a book down costs a little, not the race (Matt,
+-- 2026-10-07: twelve days away from All Systems Red and the rival was 75%
+-- ahead; he chose "slower when you're away" over "waits for you").
+local AWAY = 0.25
 
 -- The rival's share for a day: your expected day, its animal, its tuning.
 -- 0 on a nap day.
@@ -311,10 +316,11 @@ function Race.bookRace(turns, T, total_hint, t)
         local m = T.model(d)
         local mult = band((frac - you) * total / math.max(1, m.overall))
         local part = d == start_date and (1 - m.share(start)) or 1
+        if not you_end[d] then part = part * AWAY end   -- (a day you didn't open it)
         frac = math.min(1, frac + dayTarget(m, a, T.factor_on[d] or T.factor, d) * mult * part / total)
         d = nextDate(d)
     end
-    return { start = start, frac = frac, you = you_end[upto] or you, total = total }
+    return { start = start, frac = frac, you = you_end[upto] or you, total = total, read_today = you_end[upto] ~= nil }
 end
 
 -- When you finished a book, from its page turns: the first turn at the
@@ -348,7 +354,9 @@ local function rivalAt(br, T, a, total, you_pages, t)
     local target = dayTarget(m, a, factor, day)
     local mult, mood = band((br.frac * total - you_pages) / math.max(1, m.overall))
     local from = dateOf(br.start) == day and m.share(br.start) or 0
-    local pages = math.min(total, math.floor(br.frac * total + target * mult * math.max(0, m.share(t) - from) + 0.5))
+    -- (not opened today: the away pace, as on the days before)
+    local pace = br.read_today == false and AWAY or 1
+    local pages = math.min(total, math.floor(br.frac * total + target * mult * pace * math.max(0, m.share(t) - from) + 0.5))
     return pages, target, mood, m, factor
 end
 
