@@ -650,10 +650,13 @@ end
 
 -- What the statistics hold up to last midnight, in one line: changes
 -- whenever page turns are added or arrive from another device.
-function Data.statsFingerprint()
+-- (upto: a time to look up to instead of last midnight -- os.time() + a
+-- day takes in today's page turns too)
+function Data.statsFingerprint(upto)
     local db = openStats()
     if not db then return nil end
     local lo, hi = sane()
+    hi = upto or hi
     local fp
     eachRow(db, "SELECT count(*), max(start_time), sum(duration), sum(total_pages) FROM page_stat_data WHERE start_time >= ? AND start_time < ?",
         { lo, hi }, function(row)

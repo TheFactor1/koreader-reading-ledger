@@ -44,6 +44,10 @@ local TRENDING_EVERY = 86400     -- Open Library's weekly list, once a day
 -- Where the runners stood when last on screen, per book: the run-in
 -- animation only plays when one of them moved.
 local shown_positions = {}
+-- Every finished book's race, kept for the whole run: KOReader builds a new
+-- plugin instance with every file browser (each book closed), and working
+-- them out again took ~120 ms of each return home on a Kindle.
+local results_cache = nil
 
 -- Set by "Continue from p. N" (Readest's place): the file whose Readest position to jump to
 -- once it's open (the reader's own plugin instance does the jump).
@@ -823,17 +827,19 @@ function Ledger:raceModel()
 end
 
 -- Every finished book's race (any device's), and how many you won.
--- Worked out once per new batch of statistics.
+-- Worked out once per new batch of statistics -- today's page turns
+-- included, so a book finished just now counts at once.
 function Ledger:raceResults()
     local T = self:raceModel().timeline
     local key = tostring(T.habits and T.habits.fp) .. "|" .. tostring(T.rival) .. "|" .. T.today
-    if not self._results or self._results.key ~= key then
+        .. "|" .. tostring(Data.statsFingerprint(os.time() + 86400))
+    if not results_cache or results_cache.key ~= key then
         local won, lost, list = Race.tally(T, Data.finishedTurns())
         local by_hash = {}
         for _, r in ipairs(list) do if r.hash then by_hash[r.hash] = r end end
-        self._results = { key = key, won = won, lost = lost, list = list, by_hash = by_hash }
+        results_cache = { key = key, won = won, lost = lost, list = list, by_hash = by_hash }
     end
-    return self._results
+    return results_cache
 end
 
 function Ledger:raceResult(rec)
@@ -962,7 +968,7 @@ function Ledger:chooseAnimal(which)
             if a.id == other then self.settings:saveSetting(which == "runner" and "rival" or "runner", current) end
             self.settings:saveSetting(which, a.id)
             -- (the race is replayed against the new rival)
-            self.race_model, self._results = nil, nil
+            self.race_model, results_cache = nil, nil
             self.settings:flush()
             self:redraw()
         end } }
